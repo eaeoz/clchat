@@ -9,9 +9,16 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "build:exe": "node build.js"
   },
-  "keywords": ["cli", "chat", "terminal", "realtime", "socketio"],
+  "keywords": [
+    "cli",
+    "chat",
+    "terminal",
+    "realtime",
+    "socketio"
+  ],
   "license": "MIT",
   "dependencies": {
     "blessed": "^0.1.81",
@@ -20,5 +27,10 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.45.0",
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6"
   }
 }
