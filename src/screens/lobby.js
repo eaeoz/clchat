@@ -509,7 +509,10 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   roomsList.key(['escape'], () => commandInput.focus());
   usersList.key(['escape'], () => commandInput.focus());
-  commandInput.key(['escape'], () => { focusedPanel = 'rooms'; roomsList.focus(); });
+  commandInput.key(['escape'], () => {
+    socket.disconnect();
+    process.exit(0);
+  });
 
   // Load data
   loadData();

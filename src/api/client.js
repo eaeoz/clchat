@@ -81,11 +81,12 @@ class ApiClient {
   }
 
   // Auth endpoints
-  async register({ username, email, password, age, gender }) {
+  async register({ username, email, password, fullName, age, gender }) {
     const data = await this.request('POST', '/api/auth/register', {
       username,
       email,
       password,
+      fullName,
       age: parseInt(age),
       gender,
     });
