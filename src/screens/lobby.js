@@ -199,9 +199,9 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     left: 'center',
     width: '80%',
     height: 10,
-    content: `{center}Select a room from the left panel to start chatting.{/center}\n\n{center}Or select an online user to start a private conversation.{/center}\n\n{center}{bold}Commands:{/bold}{/center}\n{center}/help  - Show help{/center}\n{center}/theme - Change theme{/center}\n{center}/quit  - Exit app{/center}`,
+    content: `{center}Select a room from the left panel to{/center}\n{center}start chatting.{/center}\n\n{center}Or select an online user to start a{/center}\n{center}private conversation.{/center}\n\n{center}{bold}Commands:{/bold}{/center}\n{center}/help  - Show help{/center}\n{center}/theme - Change theme{/center}\n{center}/quit  - Exit app{/center}`,
     tags: true,
-    style: { fg: theme.muted },
+    style: { fg: theme.fg },
     align: 'center',
     valign: 'middle',
   });
@@ -237,7 +237,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       const unread = r.unreadCount > 0 ? ` {bold}(${r.unreadCount}){/bold}` : '';
       return ` \u{1F535} ${truncate(r.name, 20)}${unread}`;
     });
-    roomsList.setItems(items.length > 0 ? items : [' {muted}No rooms available{/muted}']);
+    roomsList.setItems(items.length > 0 ? items : [' {gray-fg}No rooms available{/gray-fg}']);
     screen.render();
   }
 
@@ -250,7 +250,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       const age = u.age ? ` (${u.age})` : '';
       return ` ${status} {${genderColor}}${name}{/${genderColor}}${age}`;
     });
-    usersList.setItems(items.length > 0 ? items : [' {muted}No users online{/muted}']);
+    usersList.setItems(items.length > 0 ? items : [' {gray-fg}No users online{/gray-fg}']);
     screen.render();
   }
 
@@ -392,7 +392,14 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     }
   }
 
+  let activeDialog = null;
+
   function showHelp() {
+    if (activeDialog) {
+      activeDialog.destroy();
+      activeDialog = null;
+    }
+
     const helpText = `
 {bold}{center}=== COMMANDS ==={/center}{/bold}
 
@@ -409,7 +416,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   {bold}Up/Down{/bold}    Navigate lists
 `;
 
-    const helpDialog = blessed.box({
+    activeDialog = blessed.box({
       parent: screen,
       top: 'center',
       left: 'center',
@@ -417,12 +424,10 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       height: '70%',
       border: { type: 'line' },
       style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.accent } },
-      keys: true,
-      vi: true,
     });
 
     const helpContent = blessed.text({
-      parent: helpDialog,
+      parent: activeDialog,
       top: 1,
       left: 2,
       width: '100%-4',
@@ -433,7 +438,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     });
 
     const closeBtn = blessed.text({
-      parent: helpDialog,
+      parent: activeDialog,
       bottom: 0,
       left: 'center',
       width: 20,
@@ -443,12 +448,14 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       style: { fg: theme.muted },
     });
 
-    helpDialog.key(['escape', 'enter', 'q'], () => {
-      helpDialog.destroy();
+    activeDialog.key(['escape', 'enter', 'q'], () => {
+      activeDialog.destroy();
+      activeDialog = null;
+      roomsList.focus();
       screen.render();
     });
 
-    helpDialog.focus();
+    activeDialog.focus();
     screen.render();
   }
 
