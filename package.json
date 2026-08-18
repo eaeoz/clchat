@@ -1,10 +1,11 @@
 {
   "name": "clchat",
-  "version": "1.0.0",
+  "version": "1.0.1",
+  "type": "module",
   "description": "CLI chat client for Social App - Connect, chat, and communicate from your terminal",
   "main": "src/index.js",
   "bin": {
-    "social-cli": "./src/index.js"
+    "clchat": "./src/index.js"
   },
   "scripts": {
     "start": "node src/index.js",
