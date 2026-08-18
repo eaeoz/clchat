@@ -1,0 +1,23 @@
+{
+  "name": "clchat",
+  "version": "1.0.0",
+  "description": "CLI chat client for Social App - Connect, chat, and communicate from your terminal",
+  "main": "src/index.js",
+  "bin": {
+    "social-cli": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": ["cli", "chat", "terminal", "realtime", "socketio"],
+  "license": "MIT",
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "dotenv": "^16.4.7",
+    "socket.io-client": "^4.8.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
