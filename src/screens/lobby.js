@@ -5,7 +5,7 @@ import { getCurrentTheme, getThemeNames, setTheme } from '../themes/index.js';
 import { loadConfig, saveConfig } from '../utils/storage.js';
 import { truncate, formatRelativeTime, padRight } from '../utils/terminal.js';
 
-export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, onLogout) {
+export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, onLogout, onThemeChange) {
   const theme = getCurrentTheme();
   const config = loadConfig();
 
@@ -339,9 +339,9 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   commandInput.on('submit', async () => {
     const cmd = commandInput.getValue().trim();
     commandInput.setValue('');
-    commandInput.focus();
 
     if (!cmd) {
+      roomsList.focus();
       screen.render();
       return;
     }
@@ -350,6 +350,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       await handleCommand(cmd);
     } else {
       statusText.setContent(` {yellow-fg}Commands start with /{/yellow-fg}`);
+      roomsList.focus();
       screen.render();
     }
   });
@@ -368,7 +369,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
           if (getThemeNames().includes(themeName)) {
             setTheme(themeName);
             saveConfig({ ...config, theme: themeName });
-            statusText.setContent(` {green-fg}Theme changed to ${themeName}{/green-fg}`);
+            if (onThemeChange) onThemeChange();
+            return;
           } else {
             statusText.setContent(` {red-fg}Unknown theme: ${themeName}. Available: ${getThemeNames().join(', ')}{/red-fg}`);
           }
@@ -424,6 +426,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       height: '70%',
       border: { type: 'line' },
       style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.accent } },
+      keys: true,
     });
 
     const helpContent = blessed.text({

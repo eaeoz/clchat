@@ -59,7 +59,8 @@ function showLobby() {
     currentUser,
     (room) => showChat(room, null),
     (privateChat) => showChat(null, privateChat),
-    () => handleLogout()
+    () => handleLogout(),
+    () => showLobby()
   );
 }
 
