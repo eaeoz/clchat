@@ -30,7 +30,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     left: 1,
     width: '40%',
     height: '100%',
-    content: ` {bold}\u2593 Social CLI{/bold} `,
+    content: ` {bold}Social CLI{/bold} `,
     tags: true,
     style: { fg: theme.accent, bg: theme.headerBg },
   });
@@ -127,7 +127,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     width: '100%-2',
     height: 1,
     content: ' \u{1F465} ONLINE USERS',
-    style: { fg: theme.secondary, bg: theme.bg },
+    style: { fg: theme.primary, bg: theme.bg },
   });
 
   const searchInput = blessed.textbox({
@@ -182,24 +182,13 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
   });
 
-  const welcomeTitle = blessed.text({
+  const welcomeContent = blessed.text({
     parent: welcomeBox,
-    top: 'center',
-    left: 'center',
-    width: '90%',
-    height: 3,
-    content: '{center}{bold}\u2593 Welcome to Social CLI{/bold}{/center}',
-    tags: true,
-    style: { fg: theme.accent },
-  });
-
-  const welcomeText = blessed.text({
-    parent: welcomeBox,
-    top: 'center+3',
-    left: 'center',
-    width: '80%',
-    height: 10,
-    content: `{center}Select a room from the left panel to{/center}\n{center}start chatting.{/center}\n\n{center}Or select an online user to start a{/center}\n{center}private conversation.{/center}\n\n{center}{bold}Commands:{/bold}{/center}\n{center}/help  - Show help{/center}\n{center}/theme - Change theme{/center}\n{center}/quit  - Exit app{/center}`,
+    top: 1,
+    left: 2,
+    width: '100%-4',
+    height: '100%-2',
+    content: `{center}{bold}Welcome to Social CLI{/bold}{/center}\n\n{center}Select a room from the left panel to{/center}\n{center}start chatting.{/center}\n\n{center}Or select an online user to start a{/center}\n{center}private conversation.{/center}\n\n{center}{bold}Commands:{/bold}{/center}\n{center}/help  - Show help{/center}\n{center}/theme - Change theme{/center}\n{center}/quit  - Exit app{/center}`,
     tags: true,
     style: { fg: theme.fg },
     align: 'center',
@@ -314,7 +303,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     left: 0,
     width: '100%',
     height: 1,
-    content: '{center}Tab: switch panels \u00b7 Enter: select \u00b7 /help: commands \u00b7 /quit: exit \u00b7 F1: help \u00b7 F5: refresh{/center}',
+    content: '{center}Tab: panels \u00b7 Enter: select \u00b7 /help \u00b7 /logout \u00b7 /quit \u00b7 F1: help \u00b7 F5: refresh{/center}',
     tags: true,
     style: { fg: theme.muted, bg: theme.statusBarBg },
   });
@@ -379,9 +368,13 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
         }
         screen.render();
         break;
+      case '/logout':
+        onLogout();
+        break;
       case '/quit':
       case '/exit':
-        onLogout();
+        socket.disconnect();
+        process.exit(0);
         break;
       case '/rooms':
         await loadData();
@@ -408,6 +401,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   {bold}/help{/bold}        Show this help message
   {bold}/theme <name>{/bold}  Change theme (${getThemeNames().join(', ')})
   {bold}/rooms{/bold}       Refresh rooms list
+  {bold}/logout{/bold}      Logout and return to login
   {bold}/quit{/bold}        Exit the application
 
 {bold}{center}=== NAVIGATION ==={/center}{/bold}
