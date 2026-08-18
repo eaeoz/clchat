@@ -84,11 +84,11 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     height: '100%-4',
   });
 
-  // Left panel - Rooms & Users
+  // Left panel - Rooms
   const leftPanel = blessed.box({
     parent: mainArea,
     left: 0,
-    width: '35%',
+    width: '33%',
     height: '100%',
     border: { type: 'line', left: false, top: false, bottom: false },
     style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
@@ -109,7 +109,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     top: 1,
     left: 0,
     width: '100%',
-    height: '40%',
+    bottom: 0,
     tags: true,
     style: {
       selected: { fg: theme.buttonFg, bg: theme.listSelected, bold: true },
@@ -120,19 +120,29 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     scrollbar: { style: { bg: theme.border } },
   });
 
+  // Middle panel - Users
+  const middlePanel = blessed.box({
+    parent: mainArea,
+    left: '33%',
+    width: '34%',
+    height: '100%',
+    border: { type: 'line', left: false, top: false, bottom: false },
+    style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
+  });
+
   const usersHeader = blessed.text({
-    parent: leftPanel,
-    top: '40%+1',
+    parent: middlePanel,
+    top: 0,
     left: 1,
     width: '100%-2',
     height: 1,
-    content: ' \u{1F465} ONLINE USERS',
+    content: ' \u{1F465} USERS',
     style: { fg: theme.primary, bg: theme.bg },
   });
 
   const searchInput = blessed.textbox({
-    parent: leftPanel,
-    top: '40%+2',
+    parent: middlePanel,
+    top: 1,
     left: 0,
     width: '100%',
     height: 3,
@@ -148,8 +158,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   });
 
   const usersList = blessed.list({
-    parent: leftPanel,
-    top: '40%+5',
+    parent: middlePanel,
+    top: 4,
     left: 0,
     width: '100%',
     bottom: 0,
@@ -163,21 +173,21 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     scrollbar: { style: { bg: theme.border } },
   });
 
-  // Right panel - Info
+  // Right panel - Instructions
   const rightPanel = blessed.box({
     parent: mainArea,
     right: 0,
-    width: '65%',
+    width: '33%',
     height: '100%',
     style: { bg: theme.bg },
   });
 
   const welcomeBox = blessed.box({
     parent: rightPanel,
-    top: 'center',
+    top: 0,
     left: 'center',
-    width: '80%',
-    height: '60%',
+    width: '90%',
+    height: '50%',
     border: { type: 'line' },
     style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
   });
@@ -185,14 +195,27 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   const welcomeContent = blessed.text({
     parent: welcomeBox,
     top: 1,
-    left: 2,
-    width: '100%-4',
+    left: 1,
+    width: '100%-2',
     height: '100%-2',
-    content: `{center}{bold}Welcome to Social CLI{/bold}{/center}\n\n{center}Select a room from the left panel to{/center}\n{center}start chatting.{/center}\n\n{center}Or select an online user to start a{/center}\n{center}private conversation.{/center}\n\n{center}{bold}Commands:{/bold}{/center}\n{center}/help  - Show help{/center}\n{center}/theme - Change theme{/center}\n{center}/quit  - Exit app{/center}`,
+    content: `{center}{bold}Welcome to Social CLI{/bold}{/center}\n\n{center}Select a room or user to{/center}\n{center}start chatting.{/center}\n\n{center}{bold}Commands:{/bold}{/center}\n{center}/help  - Show help{/center}\n{center}/theme - Change theme{/center}\n{center}/logout- Logout{/center}\n{center}/quit  - Exit app{/center}`,
     tags: true,
     style: { fg: theme.fg },
     align: 'center',
     valign: 'middle',
+  });
+
+  const hintsBox = blessed.text({
+    parent: rightPanel,
+    top: '50%+1',
+    left: 1,
+    width: '100%-2',
+    height: '50%-1',
+    tags: true,
+    content: `{bold}{center}Navigation{/center}{/bold}\n\nTab      Switch panels\nEnter    Select / Open chat\nEsc      Back / Cancel\nUp/Down  Navigate lists\nPgUp/PgDn Scroll\n\n{bold}{center}Tips{/center}{/bold}\n\nType /help for commands\nSearch users above`,
+    style: { fg: theme.fg },
+    align: 'left',
+    valign: 'top',
   });
 
   // State
@@ -283,9 +306,16 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     const user = onlineUsers.find(u => u.userId === data.userId);
     if (user) {
       user.status = data.status;
-      renderUsers();
+    } else if (data.status === 'online') {
+      loadData();
+      return;
     }
+    renderUsers();
   });
+
+  socket.on('user_joined', () => loadData());
+  socket.on('user_left', () => loadData());
+  socket.on('user-logged-out', () => loadData());
 
   socket.on('room_message_notification', async (data) => {
     const room = rooms.find(r => r.roomId === data.roomId);
@@ -461,7 +491,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   container.key(['f5'], () => handleCommand('/rooms'));
 
   let focusedPanel = 'rooms';
-  container.key(['tab'], () => {
+
+  function switchPanel() {
     if (focusedPanel === 'rooms') {
       focusedPanel = 'users';
       usersList.focus();
@@ -470,7 +501,11 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       roomsList.focus();
     }
     screen.render();
-  });
+  }
+
+  roomsList.key(['tab'], switchPanel);
+  usersList.key(['tab'], switchPanel);
+  searchInput.key(['tab'], switchPanel);
 
   roomsList.key(['escape'], () => commandInput.focus());
   usersList.key(['escape'], () => commandInput.focus());
