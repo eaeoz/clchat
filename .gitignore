@@ -10,3 +10,4 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.service-account.json

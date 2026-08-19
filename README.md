@@ -6,11 +6,20 @@ A terminal-based chat client that connects to the Social App backend. Chat in pu
 
 ## Download
 
-Download the standalone executable — no Node.js required:
+### Standalone (no Node.js required)
 
 **[Download clchat.exe](https://github.com/eaeoz/clchat/releases/download/1.0.3/clchat.exe)**
 
 Just run it from anywhere.
+
+### Install globally via npm
+
+```bash
+npm install -g clchat
+clchat
+```
+
+After a single install, run `clchat` from any directory.
 
 ## Features
 
