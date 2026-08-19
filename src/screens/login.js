@@ -224,8 +224,8 @@ export default function createLoginScreen(screen, onLogin) {
         });
 
         if (result.requiresEmailVerification) {
-          showMessage('{yellow-fg}Check your email for verification.{/yellow-fg}');
           setMode(true);
+          showMessage('{yellow-fg}Registration successful!{/yellow-fg}\n{white-fg}We sent a verification link to your email inbox.{/white-fg}\n{white-fg}Please click the link to verify your account before logging in.{/white-fg}');
         } else {
           saveSession(result.accessToken, result.refreshToken, result.user);
           showMessage('{green-fg}Registration successful!{/green-fg}');
