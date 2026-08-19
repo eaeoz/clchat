@@ -255,12 +255,13 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   function renderUsers() {
     const items = onlineUsers.map(u => {
-      const status = u.status === 'online' ? '\u{1F7E2}' : '\u{26AB}';
       const name = truncate(u.nickName || u.displayName || u.username, 14);
-      const genderIcon = u.gender === 'male' ? '\u2642' : u.gender === 'female' ? '\u2640' : '\u265F';
-      const genderColor = u.gender === 'male' ? 'blue-fg' : u.gender === 'female' ? 'red-fg' : 'white-fg';
+      const gender = (u.gender || '').toLowerCase();
+      const genderColor = gender === 'male' ? 'blue-fg' : gender === 'female' ? 'red-fg' : 'white-fg';
+      const genderLabel = gender === 'male' ? 'M' : gender === 'female' ? 'F' : '?';
+      const statusColor = u.status === 'online' ? 'green-fg' : 'gray-fg';
       const age = u.age ? ` (${u.age})` : '';
-      return ` ${status} {${genderColor}}${name}{/${genderColor}}${age}`;
+      return ` {${statusColor}}\u25CF{/${statusColor}} {${genderColor}}[${genderLabel}]{/${genderColor}} ${name}${age}`;
     });
     usersList.setItems(items.length > 0 ? items : [' {gray-fg}No users online{/gray-fg}']);
     screen.render();
