@@ -112,7 +112,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     height: 1,
     content: '',
     tags: true,
-    style: { fg: mutedColor },
+    style: { fg: 'yellow' },
   });
 
   // Input area - wrapper box with border, textbox inside
@@ -158,7 +158,8 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
   let messages = [];
   let typingTimeout = null;
   let isTyping = false;
-  let typingUsers = new Set();
+  let typingUsers = new Map();
+  let nicknameMap = new Map();
 
   // Load messages
   async function loadMessages() {
@@ -185,6 +186,9 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
       const isOwn = msg.senderId === user.userId;
       const time = formatTimestamp(msg.timestamp);
       const sender = truncate(msg.senderName || 'Unknown', 15);
+      if (msg.senderId && msg.senderName) {
+        nicknameMap.set(msg.senderId, msg.senderName);
+      }
 
       if (msg.messageType === 'call-log') {
         lines.push(`  {${mutedColor}-fg}\u{1F4DE} ${msg.content} (${time}){/}`);
@@ -246,12 +250,13 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
 
   function onUserTyping(data) {
     if (data.userId === user.userId) return;
-    typingUsers.add(data.username);
+    typingUsers.set(data.userId, data.username);
+    if (data.username) nicknameMap.set(data.userId, data.username);
     updateTypingIndicator();
   }
 
   function onUserStopTyping(data) {
-    typingUsers.delete(data.username);
+    typingUsers.delete(data.userId);
     updateTypingIndicator();
   }
 
@@ -259,9 +264,10 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     if (typingUsers.size === 0) {
       typingBox.setContent('');
     } else {
-      const names = Array.from(typingUsers).join(', ');
+      const names = Array.from(typingUsers.keys()).map(uid => nicknameMap.get(uid) || typingUsers.get(uid));
+      const joined = names.join(', ');
       const verb = typingUsers.size === 1 ? 'is' : 'are';
-      typingBox.setContent(`${names} ${verb} typing...`);
+      typingBox.setContent(`${joined} ${verb} typing...`);
     }
     screen.render();
   }
