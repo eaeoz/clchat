@@ -147,8 +147,16 @@ export default function createLoginScreen(screen, onLogin) {
   let isLoginMode = true;
   const regElements = [r_emailLabel, r_emailInput, r_fullNameLabel, r_fullNameInput, r_ageLabel, r_ageInput, r_genderLabel, r_genderInput];
 
+  function clearAllFields() {
+    [usernameInput, passwordInput, r_emailInput, r_fullNameInput, r_ageInput, r_genderInput].forEach(input => {
+      input.setValue('');
+      input._value = '';
+    });
+  }
+
   function setMode(loginMode) {
     isLoginMode = loginMode;
+    clearAllFields();
     regElements.forEach(f => { f.hidden = loginMode; });
     if (loginMode) {
       tabLogin.setContent(' [ \u25C0 LOGIN ] ');
