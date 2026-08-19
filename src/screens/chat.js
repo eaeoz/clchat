@@ -248,10 +248,21 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     renderMessages();
   }
 
+  async function fetchNickname(userId) {
+    if (nicknameMap.has(userId)) return;
+    try {
+      const data = await api.getUserProfile(userId);
+      const profile = data.user || data;
+      const nick = profile.nickName || profile.displayName;
+      if (nick) nicknameMap.set(userId, nick);
+      if (typingUsers.has(userId)) updateTypingIndicator();
+    } catch {}
+  }
+
   function onUserTyping(data) {
     if (data.userId === user.userId) return;
     typingUsers.set(data.userId, data.username);
-    if (data.username) nicknameMap.set(data.userId, data.username);
+    if (!nicknameMap.has(data.userId)) fetchNickname(data.userId);
     updateTypingIndicator();
   }
 
