@@ -316,6 +316,12 @@ export default function createLoginScreen(screen, onLogin) {
   screen.program.on('keypress', programKeypressHandler);
 
   blessed.text({
+    parent: container, bottom: 1, width: '100%', height: 1,
+    content: '{center}Web version: https://netcify.netlify.app{/center}',
+    tags: true, style: { fg: theme.accent, bg: theme.statusBarBg },
+  });
+
+  blessed.text({
     parent: container, bottom: 0, width: '100%', height: 1,
     content: '{center}F2: Login \u00b7 F3: Register \u00b7 Tab: next field \u00b7 Enter: next/submit \u00b7 Esc: quit{/center}',
     tags: true, style: { fg: theme.muted, bg: theme.statusBarBg },
