@@ -280,25 +280,39 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     }
   });
 
-  searchInput.on('submit', async () => {
-    const query = searchInput.getValue().trim();
-    if (query.length >= 3) {
-      try {
-        const data = await api.getUsers(query);
-        onlineUsers = data.users || [];
-        renderUsers();
-      } catch {}
-    } else if (query.length === 0) {
+  function filterUsers() {
+    const query = searchInput.getValue().trim().toLowerCase();
+    if (query.length > 0) {
+      onlineUsers = allUsers.filter(u => {
+        const name = (u.nickName || u.displayName || u.username || '').toLowerCase();
+        return name.includes(query);
+      });
+    } else {
       onlineUsers = allUsers;
-      renderUsers();
     }
+    renderUsers();
+  }
+
+  searchInput.on('submit', () => {
+    filterUsers();
+    usersList.focus();
+  });
+
+  searchInput.on('keypress', (ch, key) => {
+    if (key && (key.name === 'escape' || key.name === 'tab' || key.name === 'return' || key.ctrl)) return;
+    if (ch) filterUsers();
   });
 
   searchInput.on('cancel', () => {
     searchInput.clearValue();
     onlineUsers = allUsers;
     renderUsers();
-    roomsList.focus();
+    usersList.focus();
+    screen.render();
+  });
+
+  screen.key(['`'], () => {
+    searchInput.focus();
     screen.render();
   });
 
@@ -334,7 +348,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     left: 0,
     width: '100%',
     height: 1,
-    content: '{center}Tab: panels \u00b7 Enter: select \u00b7 /help \u00b7 /logout \u00b7 /quit \u00b7 F1: help \u00b7 F5: refresh{/center}',
+    content: '{center}Tab: panels \u00b7 Enter: select \u00b7 `: search \u00b7 /help \u00b7 /quit \u00b7 F5: refresh{/center}',
     tags: true,
     style: { fg: theme.muted, bg: theme.statusBarBg },
   });
