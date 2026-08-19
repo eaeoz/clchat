@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, rmSync } from 'fs';
+import { resolve, dirname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
@@ -9,10 +9,30 @@ const widgetDir = resolve(__dirname, 'node_modules/blessed/lib/widgets');
 const widgetFiles = readdirSync(widgetDir).filter(f => f.endsWith('.js')).map(f => f.replace('.js', ''));
 
 // Copy blessed's usr/ terminfo files next to the bundle
-// In the CJS bundle, __dirname = dist/, so blessed looks for ../usr/xterm
 const blessedUsr = resolve(__dirname, 'node_modules/blessed/usr');
 const projectUsr = resolve(__dirname, 'usr');
 cpSync(blessedUsr, projectUsr, { recursive: true });
+
+// --- Embed usr/ files as base64 for SEA ---
+function readDirRecursive(dir, prefix) {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  const result = {};
+  for (const entry of entries) {
+    const relPath = prefix ? prefix + '/' + entry.name : entry.name;
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      Object.assign(result, readDirRecursive(fullPath, relPath));
+    } else {
+      result[relPath] = readFileSync(fullPath).toString('base64');
+    }
+  }
+  return result;
+}
+
+const usrData = readDirRecursive(projectUsr, '');
+const seaShimCode = readFileSync(resolve(__dirname, 'src/sea-shim.js'), 'utf8');
+
+const banner = `(function(){globalThis.__SEA_USR_DATA__=${JSON.stringify(usrData)};})();${seaShimCode};`;
 
 const staticWidgetPlugin = {
   name: 'static-blessed-widgets',
@@ -46,6 +66,7 @@ await build({
   platform: 'node',
   format: 'cjs',
   outfile: resolve(__dirname, 'dist/cli.cjs'),
+  banner: { js: banner },
   external: ['term.js', 'pty.js'],
   plugins: [staticWidgetPlugin],
   logLevel: 'info',
@@ -66,5 +87,9 @@ const nodePath = execSync('where node', { encoding: 'utf8' }).trim().split('\n')
 const exePath = resolve(__dirname, 'dist/clchat.exe');
 cpSync(nodePath, exePath);
 execSync(`npx postject "${exePath}" NODE_SEA_BLOB dist/clchat.blob --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2`, { cwd: __dirname, stdio: 'inherit' });
+
+// Clean up intermediate files
+rmSync(resolve(__dirname, 'dist/cli.cjs'), { force: true });
+rmSync(resolve(__dirname, 'dist/clchat.blob'), { force: true });
 
 console.log('Build complete: dist/clchat.exe');
