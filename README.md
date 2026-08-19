@@ -2,34 +2,59 @@
 
 A terminal-based chat client that connects to the Social App backend. Chat in public rooms and private conversations directly from your terminal.
 
-## Install
+**Web App:** [netcify.netlify.app](https://netcify.netlify.app/)
+
+## Download
+
+Download the standalone executable — no Node.js required:
+
+**[Download clchat.exe](https://github.com/eaeoz/clchat/releases/download/1.0.3/clchat.exe)**
+
+Just run it from anywhere.
+
+## Features
+
+- **Register & Login** — create an account with username, email, password, age, and gender. Email verification supported.
+- **Public Rooms** — browse available rooms, see unread message counts, join conversations.
+- **Private Messaging** — send direct messages to any user with online/offline status indicators.
+- **Real-time Chat** — messages delivered instantly via WebSocket.
+- **Typing Indicators** — see when someone is typing a reply.
+- **User Search** — find users by username.
+- **Session Persistence** — auto-login on restart, no need to re-enter credentials.
+- **6 Themes** — default, matrix, retro, ocean, solarized, dracula. Switch with `/theme <name>`.
+- **Responsive Layout** — adapts to your terminal size.
+
+## Install (from source)
 
 ```bash
 npm install
-```
-
-## Run
-
-```bash
 npm start
 ```
 
-Or with dev mode (auto-restart on changes):
+Dev mode (auto-restart on changes):
 
 ```bash
 npm run dev
 ```
 
-## Features
+## Build Executable
 
-- Login / Register with email verification
-- Public room chat with unread counts
-- Private messaging with online status
-- Real-time typing indicators
-- User search
-- 6 built-in themes (default, matrix, retro, ocean, solarized, dracula)
-- Auto-login on restart
-- Responsive terminal layout
+```bash
+npm run build:exe
+```
+
+Produces `dist/clchat.exe` — a single portable file.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help |
+| `/theme <name>` | Change theme (matrix, retro, ocean, solarized, dracula) |
+| `/rooms` | Refresh rooms list |
+| `/clear` | Clear chat messages |
+| `/back` | Return to lobby |
+| `/quit` | Exit |
 
 ## Keyboard Shortcuts
 
@@ -43,22 +68,9 @@ npm run dev
 | F5 | Refresh rooms |
 | Ctrl+C | Exit |
 
-## Commands
-
-Type these in the command input:
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show help |
-| `/theme <name>` | Change theme (matrix, retro, ocean, solarized, dracula) |
-| `/rooms` | Refresh rooms list |
-| `/clear` | Clear chat messages |
-| `/back` | Return to lobby |
-| `/quit` | Exit |
-
 ## Requirements
 
-- Node.js >= 18.0.0
+- Node.js >= 18.0.0 (not required for the standalone exe)
 - Terminal with Unicode support
 
 ## Data
