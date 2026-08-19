@@ -195,7 +195,7 @@ export default function createLoginScreen(screen, onLogin) {
   async function handleSubmit() {
     if (isSubmitting) return;
     const username = usernameInput.getValue().trim();
-    const password = passwordInput.getValue();
+    const password = passwordInput.getValue().trim();
     if (!username || !password) { showMessage('Username and password required', true); return; }
 
     setLoading(true);
@@ -233,7 +233,12 @@ export default function createLoginScreen(screen, onLogin) {
         }
       }
     } catch (error) {
-      showMessage(`{red-fg}${error.data?.message || error.message || 'Failed'}{/red-fg}`, true);
+      const data = error.data || {};
+      if (data.requiresEmailVerification) {
+        showMessage(`{yellow-fg}Email not verified! Check inbox for ${data.email || 'your email'}.{/yellow-fg}\n{white-fg}Type /resend <email> <password> to resend.{/white-fg}`, false);
+      } else {
+        showMessage(`{red-fg}${data.error || error.message || 'Failed'}{/red-fg}`, true);
+      }
     } finally {
       setLoading(false);
     }
