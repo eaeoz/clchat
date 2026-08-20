@@ -2,8 +2,11 @@ import blessed from 'blessed';
 import api from '../api/client.js';
 import socket from '../socket/client.js';
 import { getCurrentTheme } from '../themes/index.js';
-import { truncate, formatTimestamp } from '../utils/terminal.js';
+import { truncate, formatTimestamp, formatDate } from '../utils/terminal.js';
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Hex → blessed named-color (fallback map)
+// ─────────────────────────────────────────────────────────────────────────────
 function hexToBlessed(hex) {
   if (!hex) return 'white';
   const map = {
@@ -26,6 +29,14 @@ function hexToBlessed(hex) {
   return map[hex.toLowerCase()] || 'white';
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Max input chars shown in counter
+// ─────────────────────────────────────────────────────────────────────────────
+const MAX_MSG_LEN = 2000;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Component
+// ─────────────────────────────────────────────────────────────────────────────
 export default function createChatScreen(screen, user, room, privateChat, onBack) {
   const theme = getCurrentTheme();
   const isPrivate = !!privateChat;
@@ -34,10 +45,11 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     : (room.name || 'Room');
   const targetId = isPrivate ? privateChat.userId : room.roomId;
 
-  const senderColor = hexToBlessed(theme.primary);
-  const otherColor = hexToBlessed(theme.secondary);
+  const ownColor  = hexToBlessed(theme.ownMsg || theme.primary);
+  const otherColor = hexToBlessed(theme.otherMsg || theme.secondary);
   const mutedColor = hexToBlessed(theme.muted);
 
+  // ── Root container ────────────────────────────────────────────
   const container = blessed.box({
     parent: screen,
     width: '100%',
@@ -45,7 +57,9 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     style: { bg: theme.bg },
   });
 
-  // Header
+  // ══════════════════════════════════════════════════════════════
+  //  HEADER (3 rows)
+  // ══════════════════════════════════════════════════════════════
   const header = blessed.box({
     parent: container,
     top: 0,
@@ -54,172 +68,275 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     style: { bg: theme.headerBg },
   });
 
+  // Back button
   const backBtn = blessed.text({
     parent: header,
-    left: 0,
-    width: 8,
-    height: '100%',
-    content: ' {bold}\u2190 ESC{/bold} ',
+    top: 1,
+    left: 1,
+    width: 10,
+    height: 1,
+    content: ' {bold}← ESC{/bold} ',
     tags: true,
     style: { fg: theme.accent, bg: theme.headerBg },
     clickable: true,
   });
 
+  // Vertical divider after back btn
+  blessed.text({
+    parent: header,
+    top: 0,
+    left: 11,
+    width: 1,
+    height: 3,
+    content: '│\n│\n│',
+    style: { fg: theme.border, bg: theme.headerBg },
+  });
+
+  // Chat icon + name
   const chatTitle = blessed.text({
     parent: header,
-    left: 8,
-    width: '60%',
-    height: '100%',
-    content: ` ${isPrivate ? '\u{1F4AC}' : '\u{1F4E1}'} ${targetName}`,
+    top: 1,
+    left: 13,
+    width: '55%',
+    height: 1,
+    content: ` ${isPrivate ? '💬' : '📡'} {bold}${targetName}{/bold}`,
     tags: true,
     style: { fg: theme.fg, bg: theme.headerBg },
   });
 
+  // Online status (private) / member count (room)
   const headerInfo = blessed.text({
     parent: header,
-    right: 1,
-    width: '30%',
-    height: '100%',
+    top: 1,
+    right: 2,
+    width: '25%',
+    height: 1,
     content: isPrivate
-      ? (privateChat.status === 'online' ? '{green-fg}\u25cf Online{/}' : '{black-fg}\u25cb Offline{/}')
-      : '',
+      ? (privateChat.status === 'online'
+          ? '{green-fg}● Online{/green-fg}'
+          : '{gray-fg}○ Offline{/gray-fg}')
+      : '{gray-fg}public room{/gray-fg}',
     tags: true,
     style: { fg: theme.fg, bg: theme.headerBg },
     align: 'right',
   });
 
-  // Messages area
+  // ══════════════════════════════════════════════════════════════
+  //  MESSAGES AREA
+  // ══════════════════════════════════════════════════════════════
   const messagesBox = blessed.box({
     parent: container,
     top: 3,
     left: 0,
     width: '100%',
-    height: '100%-8',
+    bottom: 6,   // typing(1) + inputWrapper(3) + hints(1) + gap(1)
     scrollable: true,
     alwaysScroll: true,
     tags: true,
-    scrollbar: { style: { bg: theme.border } },
+    scrollbar: {
+      style: { bg: theme.border },
+      track: { bg: theme.sidebarBg || theme.inputBg },
+    },
     style: { bg: theme.bg },
-    padding: { left: 1, right: 1 },
+    padding: { left: 1, right: 2, top: 0, bottom: 0 },
+    mouse: true,
+    keys: true,
   });
 
-  // Typing indicator
+  // ── Typing indicator ──────────────────────────────────────────
   const typingBox = blessed.text({
     parent: container,
-    bottom: 4,
-    left: 1,
-    width: '100%-2',
+    bottom: 5,
+    left: 2,
+    width: '70%',
     height: 1,
     content: '',
     tags: true,
-    style: { fg: 'yellow' },
+    style: { fg: theme.warning, bg: theme.bg },
   });
 
-  // Input area - wrapper box with border, textbox inside
+  // Character counter
+  const charCounter = blessed.text({
+    parent: container,
+    bottom: 5,
+    right: 2,
+    width: 14,
+    height: 1,
+    content: '',
+    tags: true,
+    style: { fg: theme.muted, bg: theme.bg },
+    align: 'right',
+  });
+
+  // ── Input wrapper + textbox ───────────────────────────────────
   const inputWrapper = blessed.box({
     parent: container,
     bottom: 1,
     left: 0,
     width: '100%',
-    height: 3,
+    height: 4,
     border: { type: 'line' },
     style: {
-      border: { fg: theme.border },
+      border: { fg: theme.inputFocusBorder || theme.primary },
+      bg: theme.inputBg,
     },
   });
 
-  // Bottom hints bar
+  const messageInput = blessed.textbox({
+    parent: inputWrapper,
+    top: 0,
+    left: 1,
+    right: 1,
+    height: '100%',
+    style: {
+      fg: theme.fg,
+      bg: theme.inputBg,
+    },
+    inputOnFocus: true,
+    placeholder: `  Message ${targetName}…`,
+  });
+
+  // ── Hints bar ─────────────────────────────────────────────────
   const hintsBar = blessed.text({
     parent: container,
     bottom: 0,
     left: 0,
     width: '100%',
     height: 1,
-    content: ' {gray-fg}Esc: back \u00b7 Enter: send \u00b7 PgUp/PgDn: scroll \u00b7 /clear: clear{/gray-fg}',
+    content: ' {gray-fg}Enter send  ·  Esc back  ·  PgUp/Dn scroll  ·  Home top  ·  End bottom  ·  /clear  /back{/gray-fg}',
     tags: true,
     style: { bg: theme.statusBarBg },
   });
 
-  const messageInput = blessed.textbox({
-    parent: inputWrapper,
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    style: {
-      fg: theme.fg,
-      bg: theme.bg,
-    },
-    inputOnFocus: true,
-    placeholder: ` Message ${targetName}...`,
-  });
-
-  // State
+  // ══════════════════════════════════════════════════════════════
+  //  STATE
+  // ══════════════════════════════════════════════════════════════
   let messages = [];
   let typingTimeout = null;
   let isTyping = false;
   let typingUsers = new Map();
   let nicknameMap = new Map();
 
-  // Load messages
-  async function loadMessages() {
-    try {
-      if (isPrivate) {
-        socket.getPrivateMessages(user.userId, targetId);
+  // ══════════════════════════════════════════════════════════════
+  //  RENDERING
+  // ══════════════════════════════════════════════════════════════
+
+  /** Group consecutive messages from same sender into "blocks" */
+  function groupMessages(msgs) {
+    const groups = [];
+    let prev = null;
+    for (const msg of msgs) {
+      if (
+        prev &&
+        prev.senderId === msg.senderId &&
+        msg.messageType !== 'system' &&
+        msg.messageType !== 'call-log' &&
+        (new Date(msg.timestamp) - new Date(prev.lastTimestamp)) < 5 * 60 * 1000
+      ) {
+        prev.lines.push({ content: msg.content, timestamp: msg.timestamp });
+        prev.lastTimestamp = msg.timestamp;
       } else {
-        socket.getRoomMessages(targetId);
+        prev = {
+          senderId: msg.senderId,
+          senderName: msg.senderName,
+          firstTimestamp: msg.timestamp,
+          lastTimestamp: msg.timestamp,
+          messageType: msg.messageType,
+          lines: [{ content: msg.content, timestamp: msg.timestamp }],
+        };
+        groups.push(prev);
       }
-    } catch (error) {
-      addSystemMessage('Failed to load messages');
     }
+    return groups;
+  }
+
+  /** Build a date separator line */
+  function dateSeparator(ts) {
+    const label = formatDate(ts);
+    return `  {gray-fg}──────── ${label} ────────{/gray-fg}`;
   }
 
   function renderMessages() {
     if (messages.length === 0) {
-      messagesBox.setContent('  {black-fg}No messages yet. Start the conversation!{/}');
+      messagesBox.setContent('  {gray-fg}No messages yet. Say hello!{/gray-fg}');
       screen.render();
       return;
     }
 
     const lines = [];
-    for (const msg of messages) {
-      const isOwn = msg.senderId === user.userId;
-      const time = formatTimestamp(msg.timestamp);
-      const sender = truncate(msg.senderName || 'Unknown', 15);
-      if (msg.senderId && msg.senderName) {
-        nicknameMap.set(msg.senderId, msg.senderName);
+    let lastDay = null;
+    const groups = groupMessages(messages);
+
+    for (const group of groups) {
+      const ts = new Date(group.firstTimestamp);
+      const day = ts.toDateString();
+
+      if (day !== lastDay) {
+        if (lastDay !== null) lines.push('');
+        lines.push(dateSeparator(group.firstTimestamp));
+        lines.push('');
+        lastDay = day;
       }
 
-      if (msg.messageType === 'call-log') {
-        lines.push(`  {${mutedColor}-fg}\u{1F4DE} ${msg.content} (${time}){/}`);
+      const isOwn = group.senderId === user.userId;
+      const isSystem = group.messageType === 'system';
+      const isCallLog = group.messageType === 'call-log';
+
+      if (isSystem || isCallLog) {
+        for (const l of group.lines) {
+          lines.push(`  {${mutedColor}-fg}ℹ ${l.content}{/}`);
+        }
+        lines.push('');
         continue;
       }
 
-      const nameTag = isOwn ? senderColor : otherColor;
-      lines.push(`  {${nameTag}-fg}{bold}${sender}{/bold} {${mutedColor}-fg}${time}{/}`);
-      lines.push(`  ${msg.content}`);
+      const time = formatTimestamp(group.firstTimestamp);
+      const senderLabel = truncate(group.senderName || 'Unknown', 18);
+
+      if (group.senderId && group.senderName) {
+        nicknameMap.set(group.senderId, group.senderName);
+      }
+
+      const nameColor = isOwn ? ownColor : otherColor;
+      const prefix = isOwn ? '  ▶' : '  ◀';
+
+      // Header line: prefix + name + time
+      lines.push(
+        `${prefix} {${nameColor}-fg}{bold}${senderLabel}{/bold}{/} {${mutedColor}-fg}${time}{/}`
+      );
+
+      // Content lines (indented)
+      for (const l of group.lines) {
+        lines.push(`     ${l.content}`);
+      }
       lines.push('');
     }
 
     messagesBox.setContent(lines.join('\n'));
-    const scrollHeight = messagesBox.getScrollHeight();
-    const clientHeight = messagesBox.height;
-    messagesBox.scrollTo(Math.max(0, scrollHeight - clientHeight));
+    scrollToBottom();
     screen.render();
+  }
+
+  function scrollToBottom() {
+    const sh = messagesBox.getScrollHeight();
+    const ch = messagesBox.height;
+    messagesBox.scrollTo(Math.max(0, sh - ch));
   }
 
   function addSystemMessage(text) {
     messages.push({
       senderId: 'system',
       senderName: '',
-      content: `\u{2139} ${text}`,
+      content: text,
       timestamp: new Date(),
       messageType: 'system',
     });
     renderMessages();
   }
 
-  // Socket event handlers
+  // ══════════════════════════════════════════════════════════════
+  //  SOCKET HANDLERS
+  // ══════════════════════════════════════════════════════════════
   function onRoomMessages(data) {
     if (isPrivate) return;
     if (data.roomId !== targetId) return;
@@ -275,29 +392,42 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     if (typingUsers.size === 0) {
       typingBox.setContent('');
     } else {
-      const names = Array.from(typingUsers.keys()).map(uid => nicknameMap.get(uid) || typingUsers.get(uid));
+      const names = Array.from(typingUsers.keys())
+        .map(uid => nicknameMap.get(uid) || typingUsers.get(uid));
       const joined = names.join(', ');
       const verb = typingUsers.size === 1 ? 'is' : 'are';
-      typingBox.setContent(`${joined} ${verb} typing...`);
+      typingBox.setContent(`{${mutedColor}-fg}✎ ${joined} ${verb} typing…{/}`);
     }
     screen.render();
   }
 
-  // Register socket listeners
+  function onUserStatusChanged(data) {
+    if (isPrivate && data.userId === targetId) {
+      headerInfo.setContent(
+        data.status === 'online'
+          ? '{green-fg}● Online{/green-fg}'
+          : '{gray-fg}○ Offline{/gray-fg}'
+      );
+      screen.render();
+    }
+  }
+
   socket.on('room_messages', onRoomMessages);
   socket.on('private_messages', onPrivateMessages);
   socket.on('room_message', onRoomMessage);
   socket.on('private_message', onPrivateMessage);
   socket.on('user_typing', onUserTyping);
   socket.on('user_stop_typing', onUserStopTyping);
+  socket.on('user_status_changed', onUserStatusChanged);
 
-  // Send message
+  // ══════════════════════════════════════════════════════════════
+  //  SENDING
+  // ══════════════════════════════════════════════════════════════
   function sendMessage(text) {
     if (!text || !text.trim()) return;
-
     const content = text.trim();
 
-    // Optimistic add
+    // Optimistic insert
     messages.push({
       senderId: user.userId,
       senderName: user.nickName || user.username,
@@ -314,14 +444,14 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     }
   }
 
-  // Input handling
+  // ── Input events ──────────────────────────────────────────────
   let lastInputTime = 0;
 
   messageInput.on('submit', (text) => {
     if (!text || !text.trim()) return;
-
     const trimmed = text.trim();
 
+    // Slash commands
     if (trimmed.startsWith('/')) {
       const cmd = trimmed.split(' ')[0].toLowerCase();
       switch (cmd) {
@@ -333,42 +463,63 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
         case '/clear':
           messages = [];
           renderMessages();
+          messageInput.setValue('');
+          messageInput.focus();
           return;
         case '/scroll-top':
           messagesBox.scrollTo(0);
           screen.render();
+          messageInput.setValue('');
           return;
-        case '/scroll-bottom': {
-          const sh = messagesBox.getScrollHeight();
-          const ch = messagesBox.height;
-          messagesBox.scrollTo(Math.max(0, sh - ch));
+        case '/scroll-bottom':
+          scrollToBottom();
           screen.render();
+          messageInput.setValue('');
           return;
-        }
       }
     }
 
     sendMessage(trimmed);
-
-    // Clear input - safe now because border is on the wrapper, not the textbox
     messageInput.setValue('');
     messageInput.focus();
+    charCounter.setContent('');
 
     if (isTyping) {
       isTyping = false;
-      socket.sendStopTyping(isPrivate ? null : targetId, user.userId, user.username, isPrivate, isPrivate ? targetId : null);
+      socket.sendStopTyping(
+        isPrivate ? null : targetId,
+        user.userId, user.username,
+        isPrivate, isPrivate ? targetId : null
+      );
     }
 
     screen.render();
   });
 
-  messageInput.on('keypress', () => {
+  messageInput.on('keypress', (ch) => {
+    const val = messageInput.getValue() || '';
+    const len = val.length;
+
+    // Character counter
+    if (len > 0) {
+      const pct = Math.round((len / MAX_MSG_LEN) * 100);
+      const color = len > MAX_MSG_LEN * 0.9 ? 'red-fg' : len > MAX_MSG_LEN * 0.7 ? 'yellow-fg' : 'gray-fg';
+      charCounter.setContent(`{${color}}${len}/${MAX_MSG_LEN}{/}`);
+    } else {
+      charCounter.setContent('');
+    }
+
+    // Typing indicator
     const now = Date.now();
     if (now - lastInputTime > 2000) {
       lastInputTime = now;
       if (!isTyping) {
         isTyping = true;
-        socket.sendTyping(isPrivate ? null : targetId, user.userId, user.username, isPrivate, isPrivate ? targetId : null);
+        socket.sendTyping(
+          isPrivate ? null : targetId,
+          user.userId, user.username,
+          isPrivate, isPrivate ? targetId : null
+        );
       }
     }
 
@@ -376,49 +527,45 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     typingTimeout = setTimeout(() => {
       if (isTyping) {
         isTyping = false;
-        socket.sendStopTyping(isPrivate ? null : targetId, user.userId, user.username, isPrivate, isPrivate ? targetId : null);
+        socket.sendStopTyping(
+          isPrivate ? null : targetId,
+          user.userId, user.username,
+          isPrivate, isPrivate ? targetId : null
+        );
       }
     }, 3000);
-  });
 
-  // Navigation - bind escape on input so it works even while typing
-  backBtn.on('click', () => {
-    cleanup();
-    onBack();
-  });
-
-  messageInput.key(['escape'], () => {
-    cleanup();
-    onBack();
-  });
-
-  container.key(['escape'], () => {
-    cleanup();
-    onBack();
-  });
-
-  container.key(['pageup'], () => {
-    messagesBox.scrollUp(5);
     screen.render();
   });
 
-  container.key(['pagedown'], () => {
-    messagesBox.scrollDown(5);
-    screen.render();
-  });
+  // ── Navigation ────────────────────────────────────────────────
+  backBtn.on('click', () => { cleanup(); onBack(); });
+  messageInput.key(['escape'], () => { cleanup(); onBack(); });
+  container.key(['escape'], () => { cleanup(); onBack(); });
 
-  container.key(['home'], () => {
-    messagesBox.scrollTo(0);
-    screen.render();
-  });
+  container.key(['pageup'], () => { messagesBox.scrollUp(8); screen.render(); });
+  container.key(['pagedown'], () => { messagesBox.scrollDown(8); screen.render(); });
+  container.key(['home'], () => { messagesBox.scrollTo(0); screen.render(); });
+  container.key(['end'], () => { scrollToBottom(); screen.render(); });
 
-  container.key(['end'], () => {
-    const sh = messagesBox.getScrollHeight();
-    const ch = messagesBox.height;
-    messagesBox.scrollTo(Math.max(0, sh - ch));
-    screen.render();
-  });
+  // Scroll with arrow keys when not typing
+  messagesBox.key(['up'], () => { messagesBox.scrollUp(1); screen.render(); });
+  messagesBox.key(['down'], () => { messagesBox.scrollDown(1); screen.render(); });
 
+  // ── Load messages ─────────────────────────────────────────────
+  async function loadMessages() {
+    try {
+      if (isPrivate) {
+        socket.getPrivateMessages(user.userId, targetId);
+      } else {
+        socket.getRoomMessages(targetId);
+      }
+    } catch {
+      addSystemMessage('Failed to load messages');
+    }
+  }
+
+  // ── Cleanup ───────────────────────────────────────────────────
   function cleanup() {
     socket.off('room_messages', onRoomMessages);
     socket.off('private_messages', onPrivateMessages);
@@ -426,12 +573,16 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     socket.off('private_message', onPrivateMessage);
     socket.off('user_typing', onUserTyping);
     socket.off('user_stop_typing', onUserStopTyping);
+    socket.off('user_status_changed', onUserStatusChanged);
 
     if (!isPrivate) {
       socket.leaveRoom(targetId, user.userId, user.username);
     }
+
+    if (typingTimeout) clearTimeout(typingTimeout);
   }
 
+  // ── Join + init ───────────────────────────────────────────────
   if (!isPrivate) {
     socket.joinRoom(targetId, user.userId, user.username);
   }

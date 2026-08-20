@@ -3,12 +3,32 @@ import api from '../api/client.js';
 import socket from '../socket/client.js';
 import { getCurrentTheme, getThemeNames, setTheme } from '../themes/index.js';
 import { loadConfig, saveConfig } from '../utils/storage.js';
-import { truncate, formatRelativeTime, padRight } from '../utils/terminal.js';
+import { truncate, formatRelativeTime, getTerminalSize } from '../utils/terminal.js';
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Build a "panel header" line with a right-aligned badge */
+function panelTitle(icon, label, count = null) {
+  const badge = count != null && count > 0 ? ` (${count})` : '';
+  return ` ${icon} ${label.toUpperCase()}${badge}`;
+}
+
+/** Format an unread badge string */
+function unreadBadge(n) {
+  if (!n || n <= 0) return '';
+  return n > 99 ? ' {bold}(99+){/bold}' : ` {bold}(${n}){/bold}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Component
+// ─────────────────────────────────────────────────────────────────────────────
 export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, onLogout, onThemeChange) {
   const theme = getCurrentTheme();
   const config = loadConfig();
 
+  // ── Root container ────────────────────────────────────────────
   const container = blessed.box({
     parent: screen,
     width: '100%',
@@ -16,7 +36,9 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     style: { bg: theme.bg },
   });
 
-  // Header
+  // ══════════════════════════════════════════════════════════════
+  //  HEADER (3 rows tall)
+  // ══════════════════════════════════════════════════════════════
   const header = blessed.box({
     parent: container,
     top: 0,
@@ -25,28 +47,30 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     style: { bg: theme.headerBg },
   });
 
-  const headerTitle = blessed.text({
+  // App name + logo
+  blessed.text({
     parent: header,
-    left: 1,
-    width: '40%',
-    height: '100%',
-    content: ` {bold}Social CLI{/bold} `,
+    top: 1,
+    left: 2,
+    height: 1,
+    content: `{bold}✦ Social CLI{/bold}`,
     tags: true,
     style: { fg: theme.accent, bg: theme.headerBg },
   });
 
+  // User info
   const headerUser = blessed.text({
     parent: header,
-    right: 1,
-    width: '40%',
-    height: '100%',
-    content: `{right}\u{1F464} ${user.username} {/right}`,
+    top: 1,
+    right: 2,
+    height: 1,
+    content: `👤 {bold}${user.username}{/bold}  {green-fg}●{/green-fg} online`,
     tags: true,
     style: { fg: theme.fg, bg: theme.headerBg },
     align: 'right',
   });
 
-  // Status bar
+  // ── STATUS BAR (row 3) ────────────────────────────────────────
   const statusBar = blessed.box({
     parent: container,
     top: 3,
@@ -58,39 +82,41 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   const statusText = blessed.text({
     parent: statusBar,
     left: 1,
-    width: '60%',
+    width: '70%',
     height: '100%',
-    content: ` \u25cf Connected`,
+    content: ` {green-fg}●{/green-fg} Connected`,
     tags: true,
-    style: { fg: theme.success, bg: theme.statusBarBg },
+    style: { fg: theme.fg, bg: theme.statusBarBg },
   });
 
-  const statusCmds = blessed.text({
+  const statusRight = blessed.text({
     parent: statusBar,
     right: 1,
-    width: '40%',
+    width: '30%',
     height: '100%',
-    content: `{right}/help \u00b7 /quit{/right}`,
+    content: `{right}F1 Help  F5 Refresh{/right}`,
     tags: true,
-    style: { fg: theme.muted, bg: theme.statusBarBg },
+    style: { fg: theme.dimFg || theme.muted, bg: theme.statusBarBg },
     align: 'right',
   });
 
-  // Main content area
+  // ══════════════════════════════════════════════════════════════
+  //  MAIN AREA  (rows 4 … bottom-4)
+  // ══════════════════════════════════════════════════════════════
   const mainArea = blessed.box({
     parent: container,
     top: 4,
     width: '100%',
-    height: '100%-4',
+    bottom: 4,   // leave room for command input (3) + hints bar (1)
   });
 
-  // Left panel - Rooms
+  // ── LEFT PANEL — Rooms ────────────────────────────────────────
   const leftPanel = blessed.box({
     parent: mainArea,
     left: 0,
     width: '33%',
     height: '100%',
-    border: { type: 'line', left: false, top: false, bottom: false },
+    border: { type: 'line' },
     style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
   });
 
@@ -98,15 +124,28 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     parent: leftPanel,
     top: 0,
     left: 1,
-    width: '100%-2',
+    width: '100%-3',
     height: 1,
-    content: ' \u{1F3E0} ROOMS',
-    style: { fg: theme.primary, bg: theme.bg },
+    content: panelTitle('📡', 'Rooms'),
+    tags: true,
+    style: { fg: theme.primary, bg: theme.panelHeaderBg || theme.headerBg, bold: true },
+  });
+
+  // Focus indicator (top border accent line)
+  const roomsFocusBorder = blessed.text({
+    parent: leftPanel,
+    top: 1,
+    left: 0,
+    width: '100%',
+    height: 1,
+    content: '',
+    tags: true,
+    style: { fg: theme.border, bg: theme.bg },
   });
 
   const roomsList = blessed.list({
     parent: leftPanel,
-    top: 1,
+    top: 2,
     left: 0,
     width: '100%',
     bottom: 0,
@@ -117,32 +156,45 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     },
     keys: true,
     mouse: true,
-    scrollbar: { style: { bg: theme.border } },
+    scrollbar: { style: { bg: theme.border }, track: { bg: theme.sidebarBg || theme.inputBg } },
   });
 
-  // Middle panel - Users
+  // ── MIDDLE PANEL — DMs / Private Chats ────────────────────────
   const middlePanel = blessed.box({
     parent: mainArea,
     left: '33%',
     width: '34%',
     height: '100%',
-    border: { type: 'line', left: false, top: false, bottom: false },
+    border: { type: 'line' },
     style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
   });
 
-  const usersHeader = blessed.text({
+  const dmHeader = blessed.text({
     parent: middlePanel,
     top: 0,
     left: 1,
-    width: '100%-2',
+    width: '100%-3',
     height: 1,
-    content: ' \u{1F465} USERS',
-    style: { fg: theme.primary, bg: theme.bg },
+    content: panelTitle('💬', 'Direct Messages'),
+    tags: true,
+    style: { fg: theme.primary, bg: theme.panelHeaderBg || theme.headerBg, bold: true },
   });
 
-  const searchInput = blessed.textbox({
+  const dmFocusBorder = blessed.text({
     parent: middlePanel,
     top: 1,
+    left: 0,
+    width: '100%',
+    height: 1,
+    content: '',
+    tags: true,
+    style: { fg: theme.border, bg: theme.bg },
+  });
+
+  // Search
+  const searchInput = blessed.textbox({
+    parent: middlePanel,
+    top: 2,
     left: 0,
     width: '100%',
     height: 3,
@@ -151,15 +203,15 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       fg: theme.fg,
       bg: theme.inputBg,
       border: { fg: theme.border },
-      focus: { border: { fg: theme.primary } },
+      focus: { border: { fg: theme.inputFocusBorder || theme.primary } },
     },
     inputOnFocus: true,
-    placeholder: ' Search users...',
+    placeholder: '  🔍 Search users…',
   });
 
-  const usersList = blessed.list({
+  const dmList = blessed.list({
     parent: middlePanel,
-    top: 4,
+    top: 5,
     left: 0,
     width: '100%',
     bottom: 0,
@@ -170,189 +222,67 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     },
     keys: true,
     mouse: true,
-    scrollbar: { style: { bg: theme.border } },
+    scrollbar: { style: { bg: theme.border }, track: { bg: theme.sidebarBg || theme.inputBg } },
   });
 
-  // Right panel - Instructions
+  // ── RIGHT PANEL — Info + quick help ───────────────────────────
   const rightPanel = blessed.box({
     parent: mainArea,
     right: 0,
     width: '33%',
     height: '100%',
-    style: { bg: theme.bg },
-  });
-
-  const welcomeBox = blessed.box({
-    parent: rightPanel,
-    top: 0,
-    left: 'center',
-    width: '90%',
-    height: '50%',
     border: { type: 'line' },
     style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
   });
 
-  const welcomeContent = blessed.text({
-    parent: welcomeBox,
-    top: 1,
-    left: 1,
-    width: '100%-2',
-    height: '100%-2',
-    content: `{center}{bold}Welcome to Social CLI{/bold}{/center}\n\n{center}Select a room or user to{/center}\n{center}start chatting.{/center}\n\n{center}{bold}Commands:{/bold}{/center}\n{center}/help  - Show help{/center}\n{center}/theme - Change theme{/center}\n{center}/logout- Logout{/center}\n{center}/quit  - Exit app{/center}`,
-    tags: true,
-    style: { fg: theme.fg },
-    align: 'center',
-    valign: 'middle',
-  });
-
-  const hintsBox = blessed.text({
+  blessed.text({
     parent: rightPanel,
-    top: '50%+1',
+    top: 0,
     left: 1,
-    width: '100%-2',
-    height: '50%-1',
-    tags: true,
-    content: `{bold}Navigation{/bold}\n\nTab       Switch panels\nEnter     Select / Open chat\nEsc       Back / Cancel\nUp/Down   Navigate lists\nPgUp/PgDn Scroll\n\`         Search users\n\n{bold}Tips{/bold}\n\nType /help for commands`,
-    style: { fg: theme.fg },
-    align: 'left',
-    valign: 'top',
-  });
-
-  // State
-  let rooms = [];
-  let onlineUsers = [];
-  let allUsers = [];
-  let userSearchTimeout = null;
-
-  // Load data
-  async function loadData() {
-    try {
-      const [roomsData, usersData] = await Promise.all([
-        api.getPublicRooms(),
-        api.getUsers(),
-      ]);
-
-      rooms = roomsData.rooms || [];
-      onlineUsers = usersData.users || [];
-      allUsers = onlineUsers;
-
-      renderRooms();
-      renderUsers();
-    } catch (error) {
-      statusText.setContent(` {red-fg}\u25cf Error loading data{/red-fg}`);
-      screen.render();
-    }
-  }
-
-  function renderRooms() {
-    const items = rooms.map(r => {
-      const unread = r.unreadCount > 0 ? ` {bold}(${r.unreadCount}){/bold}` : '';
-      return ` \u{1F535} ${truncate(r.name, 20)}${unread}`;
-    });
-    roomsList.setItems(items.length > 0 ? items : [' {gray-fg}No rooms available{/gray-fg}']);
-    screen.render();
-  }
-
-  function renderUsers() {
-    const items = onlineUsers.map(u => {
-      const name = truncate(u.nickName || u.displayName || u.username, 14);
-      const gender = (u.gender || '').toLowerCase();
-      const genderColor = gender === 'male' ? 'blue-fg' : gender === 'female' ? 'red-fg' : 'white-fg';
-      const genderLabel = gender === 'male' ? 'M' : gender === 'female' ? 'F' : '?';
-      const statusColor = u.status === 'online' ? 'green-fg' : 'gray-fg';
-      const age = u.age ? ` (${u.age})` : '';
-      return ` {${statusColor}}\u25CF{/${statusColor}} {${genderColor}}[${genderLabel}]{/${genderColor}} ${name}${age}`;
-    });
-    usersList.setItems(items.length > 0 ? items : [' {gray-fg}No users online{/gray-fg}']);
-    screen.render();
-  }
-
-  // Event handlers
-  roomsList.on('select', (item, index) => {
-    if (rooms[index]) {
-      onJoinRoom(rooms[index]);
-    }
-  });
-
-  usersList.on('select', (item, index) => {
-    if (onlineUsers[index]) {
-      onOpenChat(onlineUsers[index]);
-    }
-  });
-
-  function filterUsers() {
-    const query = searchInput.getValue().trim().toLowerCase();
-    if (query.length > 0) {
-      onlineUsers = allUsers.filter(u => {
-        const name = (u.nickName || u.displayName || u.username || '').toLowerCase();
-        return name.includes(query);
-      });
-    } else {
-      onlineUsers = allUsers;
-    }
-    renderUsers();
-  }
-
-  searchInput.on('submit', () => {
-    filterUsers();
-    usersList.focus();
-  });
-
-  searchInput.on('keypress', (ch, key) => {
-    if (key && (key.name === 'escape' || key.name === 'tab' || key.name === 'return' || key.ctrl)) return;
-    if (ch) filterUsers();
-  });
-
-  searchInput.on('cancel', () => {
-    searchInput.clearValue();
-    onlineUsers = allUsers;
-    renderUsers();
-    usersList.focus();
-    screen.render();
-  });
-
-  screen.key(['`'], () => {
-    searchInput.focus();
-    screen.render();
-  });
-
-  // Socket events
-  socket.on('user_status_changed', (data) => {
-    const user = onlineUsers.find(u => u.userId === data.userId);
-    if (user) {
-      user.status = data.status;
-    } else if (data.status === 'online') {
-      loadData();
-      return;
-    }
-    renderUsers();
-  });
-
-  socket.on('user_joined', () => loadData());
-  socket.on('user_left', () => loadData());
-  socket.on('user-logged-out', () => loadData());
-
-  socket.on('room_message_notification', async (data) => {
-    const room = rooms.find(r => r.roomId === data.roomId);
-    if (room) {
-      room.unreadCount = (room.unreadCount || 0) + 1;
-      renderRooms();
-    }
-  });
-
-  // Command input
-  // Bottom hints bar
-  const hintsBar = blessed.text({
-    parent: container,
-    bottom: 0,
-    left: 0,
-    width: '100%',
+    width: '100%-3',
     height: 1,
-    content: '{center}Tab: panels \u00b7 Enter: select \u00b7 `: search \u00b7 /help \u00b7 /quit \u00b7 F5: refresh{/center}',
+    content: ` ℹ  QUICK HELP`,
     tags: true,
-    style: { fg: theme.muted, bg: theme.statusBarBg },
+    style: { fg: theme.primary, bg: theme.panelHeaderBg || theme.headerBg, bold: true },
   });
 
+  blessed.text({
+    parent: rightPanel,
+    top: 2,
+    left: 2,
+    right: 2,
+    height: '100%-4',
+    content: [
+      `{bold}Navigation{/bold}`,
+      ``,
+      ` Tab        Switch panels`,
+      ` Enter      Open room / DM`,
+      ` Esc → /    Command input`,
+      ` \`           Search users`,
+      ` ↑ ↓        Move in list`,
+      ` PgUp/PgDn  Scroll list`,
+      ``,
+      `{bold}Commands{/bold}`,
+      ``,
+      ` /help      Show full help`,
+      ` /dms       Reload DMs`,
+      ` /rooms     Reload rooms`,
+      ` /theme <n> Change theme`,
+      ` /logout    Sign out`,
+      ` /quit      Exit`,
+      ``,
+      `{bold}Shortcuts{/bold}`,
+      ``,
+      ` F1  Help`,
+      ` F5  Refresh`,
+    ].join('\n'),
+    tags: true,
+    style: { fg: theme.fg, bg: theme.bg },
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  COMMAND INPUT (bottom, 3 rows tall)
+  // ══════════════════════════════════════════════════════════════
   const commandInput = blessed.textbox({
     parent: container,
     bottom: 1,
@@ -364,17 +294,257 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       fg: theme.fg,
       bg: theme.inputBg,
       border: { fg: theme.border },
-      focus: { border: { fg: theme.primary } },
+      focus: { border: { fg: theme.inputFocusBorder || theme.primary } },
     },
     inputOnFocus: true,
-    placeholder: ' Type /help for commands...',
+    placeholder: '  / type a command or press Esc to focus the list…',
   });
 
+  // ── HINTS BAR (bottom row) ────────────────────────────────────
+  const hintsBar = blessed.text({
+    parent: container,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: 1,
+    content: '{center}Tab panels  ·  Enter select  ·  ` search  ·  Esc command  ·  F1 help  ·  F5 refresh{/center}',
+    tags: true,
+    style: { fg: theme.dimFg || theme.muted, bg: theme.statusBarBg },
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  STATE
+  // ══════════════════════════════════════════════════════════════
+  let rooms = [];
+  let privateChats = [];       // DM inbox
+  let onlineUsers = [];        // search-result users
+  let allUsers = [];
+  let dmMode = true;           // middle panel shows DMs by default; false = user search results
+  let userSearchTimeout = null;
+  let focusedPanel = 'rooms';  // 'rooms' | 'dms' | 'search'
+
+  // ══════════════════════════════════════════════════════════════
+  //  FOCUS INDICATOR
+  // ══════════════════════════════════════════════════════════════
+  function updateFocusIndicators() {
+    // Rooms panel top line
+    roomsFocusBorder.style.bg = focusedPanel === 'rooms' ? (theme.activeTab || theme.primary) : theme.border;
+    // DM/search panel top line
+    dmFocusBorder.style.bg = (focusedPanel === 'dms' || focusedPanel === 'search')
+      ? (theme.activeTab || theme.primary)
+      : theme.border;
+    screen.render();
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  DATA LOADING
+  // ══════════════════════════════════════════════════════════════
+  async function loadData() {
+    try {
+      statusText.setContent(` {yellow-fg}●{/yellow-fg} Loading…`);
+      screen.render();
+
+      const [roomsData, usersData, dmsData] = await Promise.all([
+        api.getPublicRooms(),
+        api.getUsers(),
+        api.getPrivateChats ? api.getPrivateChats() : Promise.resolve({ chats: [] }),
+      ]);
+
+      rooms = roomsData.rooms || [];
+      allUsers = usersData.users || [];
+      onlineUsers = allUsers;
+      privateChats = dmsData.chats || [];
+
+      renderRooms();
+      renderDMs();
+
+      const totalUnread = rooms.reduce((s, r) => s + (r.unreadCount || 0), 0)
+        + privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0);
+
+      statusText.setContent(
+        ` {green-fg}●{/green-fg} Connected` +
+        (totalUnread > 0 ? `  {bold}{yellow-fg}[${totalUnread} unread]{/yellow-fg}{/bold}` : '')
+      );
+      screen.render();
+    } catch (error) {
+      statusText.setContent(` {red-fg}●{/red-fg} Error loading data`);
+      screen.render();
+    }
+  }
+
+  // ── Rooms list ────────────────────────────────────────────────
+  function renderRooms() {
+    const items = rooms.map(r => {
+      const unread = unreadBadge(r.unreadCount);
+      const name = truncate(r.name || 'Unnamed', 22);
+      return ` 📡 ${name}${unread}`;
+    });
+    const header = panelTitle('📡', 'Rooms', rooms.reduce((s, r) => s + (r.unreadCount || 0), 0) || null);
+    roomsHeader.setContent(header);
+    roomsList.setItems(
+      items.length > 0 ? items : [' {gray-fg}No rooms available{/gray-fg}']
+    );
+    screen.render();
+  }
+
+  // ── DMs panel — switches between DM inbox and user search ─────
+  function renderDMs() {
+    if (dmMode) {
+      const header = panelTitle('💬', 'Direct Messages', privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0) || null);
+      dmHeader.setContent(header);
+
+      const items = privateChats.map(chat => {
+        const other = chat.otherUser || {};
+        const name = truncate(other.nickName || other.displayName || other.username || '?', 18);
+        const status = other.status === 'online'
+          ? `{green-fg}●{/green-fg}`
+          : `{gray-fg}○{/gray-fg}`;
+        const unread = unreadBadge(chat.unreadCount);
+        return ` ${status} ${name}${unread}`;
+      });
+      dmList.setItems(
+        items.length > 0 ? items : [' {gray-fg}No conversations yet{/gray-fg}']
+      );
+    } else {
+      dmHeader.setContent(` 🔍 USER SEARCH RESULTS`);
+      const items = onlineUsers.map(u => {
+        const name = truncate(u.nickName || u.displayName || u.username, 18);
+        const gender = (u.gender || '').toLowerCase();
+        const gIcon = gender === 'male' ? '{blue-fg}♂{/blue-fg}' : gender === 'female' ? '{red-fg}♀{/red-fg}' : '';
+        const status = u.status === 'online'
+          ? `{green-fg}●{/green-fg}`
+          : `{gray-fg}○{/gray-fg}`;
+        const age = u.age ? ` {gray-fg}(${u.age}){/gray-fg}` : '';
+        return ` ${status} ${gIcon} ${name}${age}`;
+      });
+      dmList.setItems(
+        items.length > 0 ? items : [' {gray-fg}No users found{/gray-fg}']
+      );
+    }
+    screen.render();
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  SELECTION HANDLERS
+  // ══════════════════════════════════════════════════════════════
+  roomsList.on('select', (item, index) => {
+    if (rooms[index]) onJoinRoom(rooms[index]);
+  });
+
+  dmList.on('select', (item, index) => {
+    if (dmMode) {
+      const chat = privateChats[index];
+      if (chat && chat.otherUser) onOpenChat(chat.otherUser);
+    } else {
+      if (onlineUsers[index]) onOpenChat(onlineUsers[index]);
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  SEARCH
+  // ══════════════════════════════════════════════════════════════
+  function filterUsers(query) {
+    const q = query.trim().toLowerCase();
+    if (q.length > 0) {
+      onlineUsers = allUsers.filter(u => {
+        const name = (u.nickName || u.displayName || u.username || '').toLowerCase();
+        return name.includes(q);
+      });
+      dmMode = false;
+    } else {
+      onlineUsers = allUsers;
+      dmMode = true;
+    }
+    renderDMs();
+  }
+
+  searchInput.on('submit', () => {
+    filterUsers(searchInput.getValue());
+    focusedPanel = 'dms';
+    updateFocusIndicators();
+    dmList.focus();
+  });
+
+  searchInput.on('keypress', (ch, key) => {
+    if (key && (key.name === 'escape' || key.name === 'tab' || key.name === 'return' || key.ctrl)) return;
+    if (ch) {
+      clearTimeout(userSearchTimeout);
+      userSearchTimeout = setTimeout(() => filterUsers(searchInput.getValue()), 80);
+    }
+  });
+
+  searchInput.on('cancel', () => {
+    searchInput.clearValue();
+    dmMode = true;
+    onlineUsers = allUsers;
+    renderDMs();
+    focusedPanel = 'dms';
+    updateFocusIndicators();
+    dmList.focus();
+    screen.render();
+  });
+
+  // Backtick → search focus
+  screen.key(['`'], () => {
+    focusedPanel = 'search';
+    updateFocusIndicators();
+    searchInput.focus();
+    screen.render();
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  SOCKET EVENTS (named so they can be removed on destroy)
+  // ══════════════════════════════════════════════════════════════
+  const onUserStatusChanged = (data) => {
+    const u = allUsers.find(u => u.userId === data.userId);
+    if (u) {
+      u.status = data.status;
+      if (!dmMode) renderDMs();
+    } else if (data.status === 'online') {
+      loadData();
+    }
+  };
+
+  const onUserJoined = () => loadData();
+  const onUserLeft = () => loadData();
+  const onUserLoggedOut = () => loadData();
+
+  const onRoomNotification = (data) => {
+    const room = rooms.find(r => r.roomId === data.roomId);
+    if (room) {
+      room.unreadCount = (room.unreadCount || 0) + 1;
+      renderRooms();
+    }
+  };
+
+  const onPrivateMessageLobby = (data) => {
+    // Bump unread for matching DM
+    const chat = privateChats.find(c => c.otherUser && c.otherUser.userId === data.senderId);
+    if (chat) {
+      chat.unreadCount = (chat.unreadCount || 0) + 1;
+      if (dmMode) renderDMs();
+    } else {
+      loadData();
+    }
+  };
+
+  socket.on('user_status_changed', onUserStatusChanged);
+  socket.on('user_joined', onUserJoined);
+  socket.on('user_left', onUserLeft);
+  socket.on('user-logged-out', onUserLoggedOut);
+  socket.on('room_message_notification', onRoomNotification);
+  socket.on('private_message', onPrivateMessageLobby);
+
+  // ══════════════════════════════════════════════════════════════
+  //  COMMAND HANDLING
+  // ══════════════════════════════════════════════════════════════
   commandInput.on('submit', async () => {
     const cmd = commandInput.getValue().trim();
     commandInput.setValue('');
 
     if (!cmd) {
+      focusedPanel = 'rooms';
+      updateFocusIndicators();
       roomsList.focus();
       screen.render();
       return;
@@ -383,11 +553,18 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     if (cmd.startsWith('/')) {
       await handleCommand(cmd);
     } else {
-      statusText.setContent(` {yellow-fg}Commands start with /{/yellow-fg}`);
+      setStatus(`{yellow-fg}Commands must start with /{/yellow-fg}`);
+      focusedPanel = 'rooms';
+      updateFocusIndicators();
       roomsList.focus();
       screen.render();
     }
   });
+
+  function setStatus(msg) {
+    statusText.setContent(` ${msg}`);
+    screen.render();
+  }
 
   async function handleCommand(cmd) {
     const parts = cmd.split(' ');
@@ -397,6 +574,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       case '/help':
         showHelp();
         break;
+
       case '/theme':
         if (parts[1]) {
           const themeName = parts[1];
@@ -406,32 +584,47 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
             if (onThemeChange) onThemeChange();
             return;
           } else {
-            statusText.setContent(` {red-fg}Unknown theme: ${themeName}. Available: ${getThemeNames().join(', ')}{/red-fg}`);
+            setStatus(`{red-fg}Unknown theme: ${themeName}  available: ${getThemeNames().join(', ')}{/red-fg}`);
           }
         } else {
-          statusText.setContent(` {yellow-fg}Themes: ${getThemeNames().join(', ')}{/yellow-fg}`);
+          setStatus(`{yellow-fg}Available themes: ${getThemeNames().join(', ')}{/yellow-fg}`);
         }
-        screen.render();
         break;
+
       case '/logout':
         onLogout();
         break;
+
       case '/quit':
       case '/exit':
         socket.disconnect();
         process.exit(0);
         break;
+
       case '/rooms':
         await loadData();
-        statusText.setContent(` {green-fg}Refreshed!{/green-fg}`);
-        screen.render();
+        setStatus(`{green-fg}✓ Refreshed!{/green-fg}`);
         break;
+
+      case '/dms':
+        dmMode = true;
+        await loadData();
+        setStatus(`{green-fg}✓ DMs refreshed!{/green-fg}`);
+        break;
+
       default:
-        statusText.setContent(` {red-fg}Unknown command: ${command}{/red-fg}`);
-        screen.render();
+        setStatus(`{red-fg}Unknown command: ${command}  — type /help for list{/red-fg}`);
     }
+
+    focusedPanel = 'rooms';
+    updateFocusIndicators();
+    roomsList.focus();
+    screen.render();
   }
 
+  // ══════════════════════════════════════════════════════════════
+  //  HELP DIALOG
+  // ══════════════════════════════════════════════════════════════
   let activeDialog = null;
 
   function showHelp() {
@@ -440,59 +633,74 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       activeDialog = null;
     }
 
-    const helpText = `
-{bold}{center}=== COMMANDS ==={/center}{/bold}
-
-  {bold}/help{/bold}        Show this help message
-  {bold}/theme <name>{/bold}  Change theme (${getThemeNames().join(', ')})
-  {bold}/rooms{/bold}       Refresh rooms list
-  {bold}/logout{/bold}      Logout and return to login
-  {bold}/quit{/bold}        Exit the application
-
-{bold}{center}=== NAVIGATION ==={/center}{/bold}
-
-  {bold}Tab{/bold}         Switch between panels
-  {bold}Enter{/bold}       Select item / Open chat
-  {bold}Escape{/bold}      Go back / Cancel
-  {bold}Up/Down{/bold}    Navigate lists
-`;
+    const helpText = [
+      `{bold}{center}╔═══════════════════════════════╗{/center}{/bold}`,
+      `{bold}{center}║         SOCIAL CLI HELP        ║{/center}{/bold}`,
+      `{bold}{center}╚═══════════════════════════════╝{/center}{/bold}`,
+      ``,
+      `{bold}{yellow-fg}Commands{/yellow-fg}{/bold}`,
+      `  {bold}/help{/bold}          Show this help`,
+      `  {bold}/rooms{/bold}         Reload rooms list`,
+      `  {bold}/dms{/bold}           Reload direct messages`,
+      `  {bold}/theme <name>{/bold}  Change theme`,
+      `                 ${getThemeNames().map(t => `{bold}${t}{/bold}`).join('  ')}`,
+      `  {bold}/logout{/bold}        Sign out`,
+      `  {bold}/quit{/bold}          Exit app`,
+      ``,
+      `{bold}{yellow-fg}Navigation{/yellow-fg}{/bold}`,
+      `  {bold}Tab{/bold}       Switch between panels (Rooms ↔ DMs)`,
+      `  {bold}Enter{/bold}     Open room or start DM`,
+      `  {bold}↑ ↓{/bold}       Move selection in list`,
+      `  {bold}PgUp/Dn{/bold}   Scroll list`,
+      `  {bold}Esc{/bold}       Focus command input`,
+      `  {bold}\`{/bold}         Focus user search`,
+      ``,
+      `{bold}{yellow-fg}Keyboard shortcuts{/yellow-fg}{/bold}`,
+      `  {bold}F1{/bold}   Help     {bold}F5{/bold}   Refresh`,
+    ].join('\n');
 
     activeDialog = blessed.box({
       parent: screen,
       top: 'center',
       left: 'center',
-      width: '70%',
-      height: '70%',
+      width: '72%',
+      height: '80%',
       border: { type: 'line' },
       style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.accent } },
       keys: true,
+      scrollable: true,
+      alwaysScroll: true,
+      scrollbar: { style: { bg: theme.border } },
+      padding: { top: 1, left: 2, right: 2, bottom: 1 },
     });
 
-    const helpContent = blessed.text({
+    blessed.text({
       parent: activeDialog,
-      top: 1,
-      left: 2,
-      width: '100%-4',
-      height: '100%-2',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%-3',
       content: helpText,
       tags: true,
       style: { fg: theme.fg },
     });
 
-    const closeBtn = blessed.text({
+    blessed.text({
       parent: activeDialog,
       bottom: 0,
       left: 'center',
-      width: 20,
+      width: 30,
       height: 1,
-      content: '{center}[ Press Esc or Enter to close ]{/center}',
+      content: '{center}{gray-fg}[ Esc / Enter / Q to close ]{/gray-fg}{/center}',
       tags: true,
-      style: { fg: theme.muted },
+      style: {},
     });
 
     activeDialog.key(['escape', 'enter', 'q'], () => {
       activeDialog.destroy();
       activeDialog = null;
+      focusedPanel = 'rooms';
+      updateFocusIndicators();
       roomsList.focus();
       screen.render();
     });
@@ -501,48 +709,71 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     screen.render();
   }
 
-  // Keyboard shortcuts
+  // ══════════════════════════════════════════════════════════════
+  //  KEYBOARD SHORTCUTS
+  // ══════════════════════════════════════════════════════════════
   container.key(['f1'], () => handleCommand('/help'));
-  container.key(['f5'], () => handleCommand('/rooms'));
-
-  let focusedPanel = 'rooms';
+  container.key(['f5'], () => loadData().then(() => setStatus(`{green-fg}✓ Refreshed!{/green-fg}`)));
 
   function switchPanel() {
     if (focusedPanel === 'rooms') {
-      focusedPanel = 'users';
-      usersList.focus();
+      focusedPanel = 'dms';
+      dmList.focus();
     } else {
       focusedPanel = 'rooms';
       roomsList.focus();
     }
+    updateFocusIndicators();
     screen.render();
   }
 
   roomsList.key(['tab'], switchPanel);
-  usersList.key(['tab'], switchPanel);
+  dmList.key(['tab'], switchPanel);
   searchInput.key(['tab'], switchPanel);
 
-  roomsList.key(['escape'], () => commandInput.focus());
-  usersList.key(['escape'], () => commandInput.focus());
-  commandInput.key(['escape'], () => {
-    socket.disconnect();
-    process.exit(0);
+  // Esc from list → command input
+  roomsList.key(['escape'], () => {
+    commandInput.focus();
+    screen.render();
+  });
+  dmList.key(['escape'], () => {
+    commandInput.focus();
+    screen.render();
   });
 
-  // Load data
+  // Esc from command input → back to rooms
+  commandInput.key(['escape'], () => {
+    commandInput.setValue('');
+    focusedPanel = 'rooms';
+    updateFocusIndicators();
+    roomsList.focus();
+    screen.render();
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  BOOT
+  // ══════════════════════════════════════════════════════════════
   loadData();
 
-  // Focus
+  focusedPanel = 'rooms';
+  updateFocusIndicators();
   roomsList.focus();
-
   screen.render();
 
   return {
     destroy() {
+      socket.off('user_status_changed', onUserStatusChanged);
+      socket.off('user_joined', onUserJoined);
+      socket.off('user_left', onUserLeft);
+      socket.off('user-logged-out', onUserLoggedOut);
+      socket.off('room_message_notification', onRoomNotification);
+      socket.off('private_message', onPrivateMessageLobby);
       container.destroy();
     },
     show() {
       container.show();
+      focusedPanel = 'rooms';
+      updateFocusIndicators();
       roomsList.focus();
       screen.render();
     },
