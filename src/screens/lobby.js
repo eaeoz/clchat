@@ -3,7 +3,7 @@ import api from '../api/client.js';
 import socket from '../socket/client.js';
 import { getCurrentTheme, getThemeNames, setTheme } from '../themes/index.js';
 import { loadConfig, saveConfig } from '../utils/storage.js';
-import { truncate, formatRelativeTime, getTerminalSize } from '../utils/terminal.js';
+import { truncate } from '../utils/terminal.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -191,9 +191,57 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     style: { fg: theme.border, bg: theme.bg },
   });
 
+  const dmList = blessed.list({
+    parent: middlePanel,
+    top: 2,
+    left: 0,
+    width: '100%',
+    bottom: 0,
+    tags: true,
+    style: {
+      selected: { fg: theme.buttonFg, bg: theme.listSelected, bold: true },
+      item: { fg: theme.fg },
+    },
+    keys: true,
+    mouse: true,
+    scrollbar: { style: { bg: theme.border }, track: { bg: theme.sidebarBg || theme.inputBg } },
+  });
+
+  // ── RIGHT PANEL — Live Users + search ─────────────────────────
+  const rightPanel = blessed.box({
+    parent: mainArea,
+    right: 0,
+    width: '33%',
+    height: '100%',
+    border: { type: 'line' },
+    style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
+  });
+
+  const usersHeader = blessed.text({
+    parent: rightPanel,
+    top: 0,
+    left: 1,
+    width: '100%-3',
+    height: 1,
+    content: panelTitle('👥', 'Users'),
+    tags: true,
+    style: { fg: theme.primary, bg: theme.panelHeaderBg || theme.headerBg, bold: true },
+  });
+
+  const usersFocusBorder = blessed.text({
+    parent: rightPanel,
+    top: 1,
+    left: 0,
+    width: '100%',
+    height: 1,
+    content: '',
+    tags: true,
+    style: { fg: theme.border, bg: theme.bg },
+  });
+
   // Search
   const searchInput = blessed.textbox({
-    parent: middlePanel,
+    parent: rightPanel,
     top: 2,
     left: 0,
     width: '100%',
@@ -209,8 +257,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     placeholder: '  🔍 Search users…',
   });
 
-  const dmList = blessed.list({
-    parent: middlePanel,
+  const usersList = blessed.list({
+    parent: rightPanel,
     top: 5,
     left: 0,
     width: '100%',
@@ -223,61 +271,6 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     keys: true,
     mouse: true,
     scrollbar: { style: { bg: theme.border }, track: { bg: theme.sidebarBg || theme.inputBg } },
-  });
-
-  // ── RIGHT PANEL — Info + quick help ───────────────────────────
-  const rightPanel = blessed.box({
-    parent: mainArea,
-    right: 0,
-    width: '33%',
-    height: '100%',
-    border: { type: 'line' },
-    style: { fg: theme.fg, bg: theme.bg, border: { fg: theme.border } },
-  });
-
-  blessed.text({
-    parent: rightPanel,
-    top: 0,
-    left: 1,
-    width: '100%-3',
-    height: 1,
-    content: ` ℹ  QUICK HELP`,
-    tags: true,
-    style: { fg: theme.primary, bg: theme.panelHeaderBg || theme.headerBg, bold: true },
-  });
-
-  blessed.text({
-    parent: rightPanel,
-    top: 2,
-    left: 2,
-    right: 2,
-    height: '100%-4',
-    content: [
-      `{bold}Navigation{/bold}`,
-      ``,
-      ` Tab        Switch panels`,
-      ` Enter      Open room / DM`,
-      ` Esc → /    Command input`,
-      ` \`           Search users`,
-      ` ↑ ↓        Move in list`,
-      ` PgUp/PgDn  Scroll list`,
-      ``,
-      `{bold}Commands{/bold}`,
-      ``,
-      ` /help      Show full help`,
-      ` /dms       Reload DMs`,
-      ` /rooms     Reload rooms`,
-      ` /theme <n> Change theme`,
-      ` /logout    Sign out`,
-      ` /quit      Exit`,
-      ``,
-      `{bold}Shortcuts{/bold}`,
-      ``,
-      ` F1  Help`,
-      ` F5  Refresh`,
-    ].join('\n'),
-    tags: true,
-    style: { fg: theme.fg, bg: theme.bg },
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -307,8 +300,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     left: 0,
     width: '100%',
     height: 1,
-    content: '{center}Tab panels  ·  Enter select  ·  ` search  ·  Esc command  ·  F1 help  ·  F5 refresh{/center}',
-    tags: true,
+    content: '{center}Tab panels  ·  Enter select  ·  ` search  ·  Esc command  ·  F1 help  ·  F5 refresh{/center}',    tags: true,
     style: { fg: theme.dimFg || theme.muted, bg: theme.statusBarBg },
   });
 
@@ -317,22 +309,20 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   // ══════════════════════════════════════════════════════════════
   let rooms = [];
   let privateChats = [];       // DM inbox
-  let onlineUsers = [];        // search-result users
+  let onlineUsers = [];        // users shown in the Users panel (filtered)
   let allUsers = [];
-  let dmMode = true;           // middle panel shows DMs by default; false = user search results
+  let displayedUsers = [];     // sorted order actually rendered in usersList
   let userSearchTimeout = null;
-  let focusedPanel = 'rooms';  // 'rooms' | 'dms' | 'search'
+  let focusedPanel = 'rooms';  // 'rooms' | 'dms' | 'users' | 'search'
 
   // ══════════════════════════════════════════════════════════════
   //  FOCUS INDICATOR
   // ══════════════════════════════════════════════════════════════
   function updateFocusIndicators() {
-    // Rooms panel top line
-    roomsFocusBorder.style.bg = focusedPanel === 'rooms' ? (theme.activeTab || theme.primary) : theme.border;
-    // DM/search panel top line
-    dmFocusBorder.style.bg = (focusedPanel === 'dms' || focusedPanel === 'search')
-      ? (theme.activeTab || theme.primary)
-      : theme.border;
+    const active = theme.activeTab || theme.primary;
+    roomsFocusBorder.style.bg = focusedPanel === 'rooms' ? active : theme.border;
+    dmFocusBorder.style.bg = focusedPanel === 'dms' ? active : theme.border;
+    usersFocusBorder.style.bg = (focusedPanel === 'users' || focusedPanel === 'search') ? active : theme.border;
     screen.render();
   }
 
@@ -357,6 +347,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
       renderRooms();
       renderDMs();
+      renderUsers();
 
       const totalUnread = rooms.reduce((s, r) => s + (r.unreadCount || 0), 0)
         + privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0);
@@ -387,40 +378,54 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     screen.render();
   }
 
-  // ── DMs panel — switches between DM inbox and user search ─────
+  // ── DMs panel — DM inbox ──────────────────────────────────────
   function renderDMs() {
-    if (dmMode) {
-      const header = panelTitle('💬', 'Direct Messages', privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0) || null);
-      dmHeader.setContent(header);
+    const header = panelTitle('💬', 'Direct Messages', privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0) || null);
+    dmHeader.setContent(header);
 
-      const items = privateChats.map(chat => {
-        const other = chat.otherUser || {};
-        const name = truncate(other.nickName || other.displayName || other.username || '?', 18);
-        const status = other.status === 'online'
-          ? `{green-fg}●{/green-fg}`
-          : `{gray-fg}○{/gray-fg}`;
-        const unread = unreadBadge(chat.unreadCount);
-        return ` ${status} ${name}${unread}`;
-      });
-      dmList.setItems(
-        items.length > 0 ? items : [' {gray-fg}No conversations yet{/gray-fg}']
-      );
-    } else {
-      dmHeader.setContent(` 🔍 USER SEARCH RESULTS`);
-      const items = onlineUsers.map(u => {
-        const name = truncate(u.nickName || u.displayName || u.username, 18);
-        const gender = (u.gender || '').toLowerCase();
-        const gIcon = gender === 'male' ? '{blue-fg}♂{/blue-fg}' : gender === 'female' ? '{red-fg}♀{/red-fg}' : '';
-        const status = u.status === 'online'
-          ? `{green-fg}●{/green-fg}`
-          : `{gray-fg}○{/gray-fg}`;
-        const age = u.age ? ` {gray-fg}(${u.age}){/gray-fg}` : '';
-        return ` ${status} ${gIcon} ${name}${age}`;
-      });
-      dmList.setItems(
-        items.length > 0 ? items : [' {gray-fg}No users found{/gray-fg}']
-      );
-    }
+    const items = privateChats.map(chat => {
+      const other = chat.otherUser || {};
+      const name = truncate(other.nickName || other.displayName || other.username || '?', 18);
+      const status = other.status === 'online'
+        ? `{green-fg}●{/green-fg}`
+        : `{gray-fg}○{/gray-fg}`;
+      const unread = unreadBadge(chat.unreadCount);
+      return ` ${status} ${name}${unread}`;
+    });
+    dmList.setItems(
+      items.length > 0 ? items : [' {gray-fg}No conversations yet{/gray-fg}']
+    );
+    screen.render();
+  }
+
+  // ── Users panel — live user list ──────────────────────────────
+  function sortOnlineFirst(users) {
+    return [...users].sort((a, b) => {
+      const aOn = a.status === 'online' ? 0 : 1;
+      const bOn = b.status === 'online' ? 0 : 1;
+      return aOn - bOn;
+    });
+  }
+
+  function renderUsers() {
+    const onlineCount = allUsers.filter(u => u.status === 'online').length;
+    usersHeader.setContent(panelTitle('👥', 'Users', onlineCount));
+
+    displayedUsers = sortOnlineFirst(onlineUsers);
+
+    const items = displayedUsers.map(u => {
+      const name = truncate(u.nickName || u.displayName || u.username, 18);
+      const gender = (u.gender || '').toLowerCase();
+      const gIcon = gender === 'male' ? '{blue-fg}♂{/blue-fg}' : gender === 'female' ? '{red-fg}♀{/red-fg}' : '';
+      const status = u.status === 'online'
+        ? `{green-fg}●{/green-fg}`
+        : `{gray-fg}○{/gray-fg}`;
+      const age = u.age ? ` {gray-fg}(${u.age}){/gray-fg}` : '';
+      return ` ${status} ${gIcon} ${name}${age}`.replace(/\s+$/, '');
+    });
+    usersList.setItems(
+      items.length > 0 ? items : [' {gray-fg}No users found{/gray-fg}']
+    );
     screen.render();
   }
 
@@ -432,12 +437,12 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   });
 
   dmList.on('select', (item, index) => {
-    if (dmMode) {
-      const chat = privateChats[index];
-      if (chat && chat.otherUser) onOpenChat(chat.otherUser);
-    } else {
-      if (onlineUsers[index]) onOpenChat(onlineUsers[index]);
-    }
+    const chat = privateChats[index];
+    if (chat && chat.otherUser) onOpenChat(chat.otherUser);
+  });
+
+  usersList.on('select', (item, index) => {
+    if (displayedUsers[index]) onOpenChat(displayedUsers[index]);
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -450,19 +455,17 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
         const name = (u.nickName || u.displayName || u.username || '').toLowerCase();
         return name.includes(q);
       });
-      dmMode = false;
     } else {
       onlineUsers = allUsers;
-      dmMode = true;
     }
-    renderDMs();
+    renderUsers();
   }
 
   searchInput.on('submit', () => {
     filterUsers(searchInput.getValue());
-    focusedPanel = 'dms';
+    focusedPanel = 'users';
     updateFocusIndicators();
-    dmList.focus();
+    usersList.focus();
   });
 
   searchInput.on('keypress', (ch, key) => {
@@ -475,17 +478,17 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   searchInput.on('cancel', () => {
     searchInput.clearValue();
-    dmMode = true;
     onlineUsers = allUsers;
-    renderDMs();
-    focusedPanel = 'dms';
+    renderUsers();
+    focusedPanel = 'users';
     updateFocusIndicators();
-    dmList.focus();
+    usersList.focus();
     screen.render();
   });
 
-  // Backtick → search focus
+  // Backtick → search focus (unless already typing in an input)
   screen.key(['`'], () => {
+    if (screen.focused === searchInput || screen.focused === commandInput) return;
     focusedPanel = 'search';
     updateFocusIndicators();
     searchInput.focus();
@@ -496,10 +499,27 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   //  SOCKET EVENTS (named so they can be removed on destroy)
   // ══════════════════════════════════════════════════════════════
   const onUserStatusChanged = (data) => {
+    let known = false;
+
     const u = allUsers.find(u => u.userId === data.userId);
     if (u) {
       u.status = data.status;
-      if (!dmMode) renderDMs();
+      known = true;
+    }
+    const ou = onlineUsers.find(u => u.userId === data.userId);
+    if (ou) {
+      ou.status = data.status;
+      known = true;
+    }
+    const chat = privateChats.find(c => c.otherUser && c.otherUser.userId === data.userId);
+    if (chat && chat.otherUser) {
+      chat.otherUser.status = data.status;
+      known = true;
+    }
+
+    if (known) {
+      renderUsers();
+      renderDMs();
     } else if (data.status === 'online') {
       loadData();
     }
@@ -522,7 +542,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     const chat = privateChats.find(c => c.otherUser && c.otherUser.userId === data.senderId);
     if (chat) {
       chat.unreadCount = (chat.unreadCount || 0) + 1;
-      if (dmMode) renderDMs();
+      renderDMs();
     } else {
       loadData();
     }
@@ -607,7 +627,6 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
         break;
 
       case '/dms':
-        dmMode = true;
         await loadData();
         setStatus(`{green-fg}✓ DMs refreshed!{/green-fg}`);
         break;
@@ -648,7 +667,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       `  {bold}/quit{/bold}          Exit app`,
       ``,
       `{bold}{yellow-fg}Navigation{/yellow-fg}{/bold}`,
-      `  {bold}Tab{/bold}       Switch between panels (Rooms ↔ DMs)`,
+      `  {bold}Tab{/bold}       Switch panels (Rooms ↔ DMs ↔ Users)`,
       `  {bold}Enter{/bold}     Open room or start DM`,
       `  {bold}↑ ↓{/bold}       Move selection in list`,
       `  {bold}PgUp/Dn{/bold}   Scroll list`,
@@ -711,14 +730,22 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   // ══════════════════════════════════════════════════════════════
   //  KEYBOARD SHORTCUTS
+  //  NOTE: bound to `screen` (not container) — blessed only sends
+  //  key events to the focused element, and container is never the
+  //  focused element, so container.key() handlers never fire.
   // ══════════════════════════════════════════════════════════════
-  container.key(['f1'], () => handleCommand('/help'));
-  container.key(['f5'], () => loadData().then(() => setStatus(`{green-fg}✓ Refreshed!{/green-fg}`)));
+  const onF1 = () => handleCommand('/help');
+  const onF5 = () => loadData().then(() => setStatus(`{green-fg}✓ Refreshed!{/green-fg}`));
+  screen.key(['f1'], onF1);
+  screen.key(['f5'], onF5);
 
   function switchPanel() {
     if (focusedPanel === 'rooms') {
       focusedPanel = 'dms';
       dmList.focus();
+    } else if (focusedPanel === 'dms') {
+      focusedPanel = 'users';
+      usersList.focus();
     } else {
       focusedPanel = 'rooms';
       roomsList.focus();
@@ -729,6 +756,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   roomsList.key(['tab'], switchPanel);
   dmList.key(['tab'], switchPanel);
+  usersList.key(['tab'], switchPanel);
   searchInput.key(['tab'], switchPanel);
 
   // Esc from list → command input
@@ -740,10 +768,14 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     commandInput.focus();
     screen.render();
   });
+  usersList.key(['escape'], () => {
+    commandInput.focus();
+    screen.render();
+  });
 
   // Esc from command input → back to rooms
   commandInput.key(['escape'], () => {
-    commandInput.setValue('');
+    commandInput.clearValue();
     focusedPanel = 'rooms';
     updateFocusIndicators();
     roomsList.focus();
@@ -762,6 +794,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   return {
     destroy() {
+      screen.unkey(['f1'], onF1);
+      screen.unkey(['f5'], onF5);
       socket.off('user_status_changed', onUserStatusChanged);
       socket.off('user_joined', onUserJoined);
       socket.off('user_left', onUserLeft);

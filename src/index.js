@@ -21,6 +21,7 @@ const screen = blessed.screen({
   smartCSR: true,
   title: 'Social CLI',
   fullUnicode: true,
+  mouse: true, // required for list clicks / wheel scrolling to work at all
 });
 
 screen.program.hideCursor();
@@ -42,11 +43,9 @@ function showLogin() {
     api.setTokens(accessToken, refreshToken);
     api.setUser(user);
 
-    // Connect socket
+    // Connect socket (auth is sent automatically on connect/reconnect)
     socket.connect();
-    socket.on('connected', () => {
-      socket.authenticate(user.userId, user.username);
-    });
+    socket.authenticate(user.userId, user.username);
 
     showLobby();
   });
@@ -134,11 +133,9 @@ async function init() {
       await api.getMe();
       currentUser = api.user || session.user;
 
-      // Connect socket
+      // Connect socket (auth is sent automatically on connect/reconnect)
       socket.connect();
-      socket.on('connected', () => {
-        socket.authenticate(currentUser.userId, currentUser.username);
-      });
+      socket.authenticate(currentUser.userId, currentUser.username);
 
       showLobby();
       return;

@@ -114,6 +114,10 @@ class SocketClient {
       this.socket.disconnect();
       this.socket = null;
       this.connected = false;
+      // Clear identity so a later reconnect can't auto-authenticate
+      // as the previous user (e.g. after logout / account switch).
+      this.userId = null;
+      this.username = null;
     }
   }
 

@@ -463,7 +463,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
         case '/clear':
           messages = [];
           renderMessages();
-          messageInput.setValue('');
+          messageInput.clearValue();
           messageInput.focus();
           return;
         case '/scroll-top':
@@ -480,7 +480,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     }
 
     sendMessage(trimmed);
-    messageInput.setValue('');
+    messageInput.clearValue();
     messageInput.focus();
     charCounter.setContent('');
 
@@ -539,18 +539,21 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
   });
 
   // ── Navigation ────────────────────────────────────────────────
+  // NOTE: key handlers must live on `messageInput` — blessed only
+  // dispatches key events to the focused element, and the input is
+  // always focused here, so bindings on container/messagesBox
+  // would never fire.
   backBtn.on('click', () => { cleanup(); onBack(); });
   messageInput.key(['escape'], () => { cleanup(); onBack(); });
-  container.key(['escape'], () => { cleanup(); onBack(); });
 
-  container.key(['pageup'], () => { messagesBox.scrollUp(8); screen.render(); });
-  container.key(['pagedown'], () => { messagesBox.scrollDown(8); screen.render(); });
-  container.key(['home'], () => { messagesBox.scrollTo(0); screen.render(); });
-  container.key(['end'], () => { scrollToBottom(); screen.render(); });
+  messageInput.key(['pageup'], () => { messagesBox.scrollUp(8); screen.render(); });
+  messageInput.key(['pagedown'], () => { messagesBox.scrollDown(8); screen.render(); });
+  messageInput.key(['home'], () => { messagesBox.scrollTo(0); screen.render(); });
+  messageInput.key(['end'], () => { scrollToBottom(); screen.render(); });
 
-  // Scroll with arrow keys when not typing
-  messagesBox.key(['up'], () => { messagesBox.scrollUp(1); screen.render(); });
-  messagesBox.key(['down'], () => { messagesBox.scrollDown(1); screen.render(); });
+  // Scroll with arrow keys
+  messageInput.key(['up'], () => { messagesBox.scrollUp(1); screen.render(); });
+  messageInput.key(['down'], () => { messagesBox.scrollDown(1); screen.render(); });
 
   // ── Load messages ─────────────────────────────────────────────
   async function loadMessages() {
