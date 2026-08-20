@@ -24,7 +24,25 @@ const screen = blessed.screen({
   mouse: true, // required for list clicks / wheel scrolling to work at all
 });
 
-screen.program.hideCursor();
+// Hide the terminal cursor everywhere (text inputs included).
+// NOTE: blessed's terminfo emits EMPTY strings for civis/cnorm on some
+// Windows setups, so program.hideCursor() silently does nothing there.
+// Force the standard ANSI DECTCEM sequences instead, neutralize blessed's
+// attempts to re-show the cursor when a textbox grabs focus, and restore
+// the real cursor on exit no matter how we quit.
+const program = screen.program;
+program.hideCursor = function () {
+  this.cursorHidden = true;
+  this._write('\x1b[?25l');
+};
+program.showCursor = function () {};
+program.hideCursor();
+process.on('exit', () => {
+  try {
+    program._write('\x1b[?25h');
+    program.flush();
+  } catch {}
+});
 
 let currentView = null;
 let currentUser = null;
