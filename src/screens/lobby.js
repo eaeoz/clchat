@@ -312,6 +312,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   let onlineUsers = [];        // users shown in the Users panel (filtered)
   let allUsers = [];
   let displayedUsers = [];     // sorted order actually rendered in usersList
+  let genderCache = new Map(); // userId -> 'male' | 'female' | ''
   let userSearchTimeout = null;
   let focusedPanel = 'rooms';  // 'rooms' | 'dms' | 'users' | 'search'
 
@@ -348,6 +349,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       renderRooms();
       renderDMs();
       renderUsers();
+      hydrateGenders();
 
       const totalUnread = rooms.reduce((s, r) => s + (r.unreadCount || 0), 0)
         + privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0);
@@ -415,18 +417,50 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
     const items = displayedUsers.map(u => {
       const name = truncate(u.nickName || u.displayName || u.username, 18);
-      const gender = (u.gender || '').toLowerCase();
-      const gIcon = gender === 'male' ? '{blue-fg}♂{/blue-fg}' : gender === 'female' ? '{red-fg}♀{/red-fg}' : '';
+      const gender = (u.gender || genderCache.get(u.userId) || '').toLowerCase();
+      const gIcon = gender === 'male' ? '{blue-fg}♂{/blue-fg}' : gender === 'female' ? '{magenta-fg}♀{/magenta-fg}' : '{gray-fg}·{/gray-fg}';
+      const nameColored = gender === 'male'
+        ? `{blue-fg}${name}{/blue-fg}`
+        : gender === 'female'
+          ? `{magenta-fg}${name}{/magenta-fg}`
+          : name;
       const status = u.status === 'online'
         ? `{green-fg}●{/green-fg}`
         : `{gray-fg}○{/gray-fg}`;
       const age = u.age ? ` {gray-fg}(${u.age}){/gray-fg}` : '';
-      return ` ${status} ${gIcon} ${name}${age}`.replace(/\s+$/, '');
+      return ` ${status} ${gIcon} ${nameColored}${age}`.replace(/\s+$/, '');
     });
     usersList.setItems(
       items.length > 0 ? items : [' {gray-fg}No users found{/gray-fg}']
     );
     screen.render();
+  }
+
+  // Fetch full profiles in background to learn each user's gender
+  // (the /users list endpoint does not include it), then re-render.
+  async function hydrateGenders() {
+    const unknown = displayedUsers.filter(u => !genderCache.has(u.userId));
+    if (unknown.length === 0) return;
+
+    let index = 0;
+    let updated = false;
+    async function worker() {
+      while (index < unknown.length) {
+        const u = unknown[index++];
+        try {
+          const res = await api.getUserProfile(u.userId);
+          const prof = (res && res.user) || res || {};
+          genderCache.set(u.userId, (prof.gender || '').toLowerCase());
+          updated = true;
+        } catch {
+          genderCache.set(u.userId, '');
+        }
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(5, unknown.length) }, worker)
+    );
+    if (updated) renderUsers();
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -459,6 +493,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       onlineUsers = allUsers;
     }
     renderUsers();
+    hydrateGenders();
   }
 
   searchInput.on('submit', () => {
