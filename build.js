@@ -60,6 +60,8 @@ Object.keys(widget.aliases).forEach(function(key) {
 };
 
 // Bundle
+const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8'));
+
 await build({
   entryPoints: [resolve(__dirname, 'src/index.js')],
   bundle: true,
@@ -69,6 +71,7 @@ await build({
   banner: { js: banner },
   external: ['term.js', 'pty.js'],
   plugins: [staticWidgetPlugin],
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   logLevel: 'info',
 });
 

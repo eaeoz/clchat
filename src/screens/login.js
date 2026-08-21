@@ -4,6 +4,7 @@ import socket from '../socket/client.js';
 import { getCurrentTheme } from '../themes/index.js';
 import { saveSession } from '../utils/storage.js';
 import { getTerminalSize } from '../utils/terminal.js';
+import { APP_VERSION } from '../version.js';
 
 // ─────────────────────────────────────────────────────────────
 //  ASCII logo lines (shown when terminal is wide enough)
@@ -24,6 +25,9 @@ export default function createLoginScreen(screen, onLogin) {
   // Logo needs a tall terminal — on medium ones those rows are needed
   // by the form card itself (content-driven sizing below).
   const showLogo = termH >= 36 && termW >= 70;
+  // Taglines sit on headerBg — dim colors go invisible there on some
+  // themes / 16-color terminals, so use the main foreground.
+  const taglineFg = theme.fg;
 
   // ── Root container ──────────────────────────────────────────
   const container = blessed.box({
@@ -41,6 +45,19 @@ export default function createLoginScreen(screen, onLogin) {
     height: showLogo ? LOGO.length + 3 : 4,
     style: { bg: theme.headerBg },
   });
+
+  // ── Version (top-right corner, on the header surface) ───────
+  if (APP_VERSION) {
+    blessed.text({
+      parent: container,
+      top: 0,
+      right: 1,
+      height: 1,
+      content: `v${APP_VERSION}`,
+      tags: true,
+      style: { fg: theme.fg, bg: theme.headerBg },
+    });
+  }
 
   // ── Logo or title ───────────────────────────────────────────
   if (showLogo) {
@@ -62,7 +79,7 @@ export default function createLoginScreen(screen, onLogin) {
       height: 1,
       content: `{center}${TAGLINE}{/center}`,
       tags: true,
-      style: { fg: theme.muted, bg: theme.headerBg },
+      style: { fg: taglineFg, bg: theme.headerBg },
     });
   } else {
     blessed.text({
@@ -81,7 +98,7 @@ export default function createLoginScreen(screen, onLogin) {
       height: 1,
       content: `{center}Connect · Chat · Communicate{/center}`,
       tags: true,
-      style: { fg: theme.muted, bg: theme.headerBg },
+      style: { fg: taglineFg, bg: theme.headerBg },
     });
   }
 
@@ -286,9 +303,9 @@ export default function createLoginScreen(screen, onLogin) {
     bottom: 0,
     width: '100%',
     height: 1,
-    content: '{center}F2 Login  ·  F3 Register  ·  Tab Next field  ·  Enter Submit  ·  Esc Quit{/center}',
+    content: '{center}{bold}F2{/bold} Login  ·  {bold}F3{/bold} Register  ·  {bold}Tab{/bold} Next field  ·  {bold}Enter{/bold} Submit  ·  {bold}Esc{/bold} Quit{/center}',
     tags: true,
-    style: { fg: theme.dimFg || theme.muted, bg: theme.statusBarBg },
+    style: { fg: theme.fg, bg: theme.statusBarBg },
   });
 
   // ── State ────────────────────────────────────────────────────

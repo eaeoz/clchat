@@ -1,13 +1,11 @@
 import blessed from 'blessed';
-import { createRequire } from 'module';
 import api from '../api/client.js';
 import socket from '../socket/client.js';
 import { justRead, closeState } from './chat.js';
 import { getCurrentTheme, getThemeNames, setTheme } from '../themes/index.js';
 import { loadConfig, saveConfig } from '../utils/storage.js';
 import { truncate } from '../utils/terminal.js';
-
-const pkg = createRequire(import.meta.url)('../../package.json');
+import { APP_VERSION } from '../version.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -31,6 +29,12 @@ function unreadBadge(n) {
 export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, onLogout, onThemeChange, initialPanel = 'rooms') {
   const theme = getCurrentTheme();
   const config = loadConfig();
+
+  // Some themes ship dimFg/muted identical to headerBg/statusBarBg, and
+  // 16-color terminals quantize dark hexes into the same ANSI slot either
+  // way — dim colors end up invisible. Bars MUST use theme.fg (guaranteed
+  // readable); emphasis comes from bold tags instead of darker colors.
+  const barFg = theme.fg;
 
   // ── Root container ────────────────────────────────────────────
   const container = blessed.box({
@@ -62,15 +66,15 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     style: { fg: theme.accent, bg: theme.headerBg },
   });
 
-  // Version label (terminals have no font sizes — dim color reads as "small")
+  // Version label next to the logo
   blessed.text({
     parent: header,
     top: 1,
     left: 16,
     height: 1,
-    content: `v${pkg.version}`,
+    content: APP_VERSION ? `v${APP_VERSION}` : '',
     tags: true,
-    style: { fg: theme.dimFg || theme.muted, bg: theme.headerBg },
+    style: { fg: barFg, bg: theme.headerBg },
   });
 
   // User info
@@ -109,9 +113,9 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     right: 1,
     width: '30%',
     height: '100%',
-    content: `{right}F1 Help  F5 Refresh{/right}`,
+    content: `{right}{bold}F1{/bold} Help   {bold}F5{/bold} Refresh{/right}`,
     tags: true,
-    style: { fg: theme.dimFg || theme.muted, bg: theme.statusBarBg },
+    style: { fg: barFg, bg: theme.statusBarBg },
     align: 'right',
   });
 
@@ -281,8 +285,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     left: 0,
     width: '100%',
     height: 1,
-    content: '{center}Tab panels  ·  Enter select  ·  ` search  ·  Esc command  ·  F1 help  ·  F5 refresh{/center}', tags: true,
-    style: { fg: theme.dimFg || theme.muted, bg: theme.statusBarBg },
+    content: '{center}{bold}Tab{/bold} panels  ·  {bold}Enter{/bold} select  ·  {bold}`{/bold} search  ·  {bold}Esc{/bold} command  ·  {bold}F1{/bold} help  ·  {bold}F5{/bold} refresh{/center}',    tags: true,
+    style: { fg: barFg, bg: theme.statusBarBg },
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -517,17 +521,26 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   // ══════════════════════════════════════════════════════════════
   //  SELECTION HANDLERS
+  //  NOTE: rapid/buffered keypresses (e.g. Enter Enter) can reach a
+  //  list right after the help dialog closes and focus returns — the
+  //  short suppression window stops the closing key from opening a
+  //  room/chat by accident.
   // ══════════════════════════════════════════════════════════════
+  let suppressSelectUntil = 0;
+
   roomsList.on('select', (item, index) => {
+    if (Date.now() < suppressSelectUntil) return;
     if (rooms[index]) onJoinRoom(rooms[index]);
   });
 
   dmList.on('select', (item, index) => {
+    if (Date.now() < suppressSelectUntil) return;
     const chat = displayedChats[index];
     if (chat && chat.otherUser) onOpenChat(chat.otherUser);
   });
 
   usersList.on('select', (item, index) => {
+    if (Date.now() < suppressSelectUntil) return;
     if (displayedUsers[index]) onOpenChat(displayedUsers[index]);
   });
 
@@ -699,7 +712,10 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     switch (command) {
       case '/help':
         showHelp();
-        break;
+        // The dialog takes focus — do NOT fall through to the tail
+        // refocus below, it would steal keys back from the dialog and
+        // Enter/Esc would hit the lists behind the overlay instead.
+        return;
 
       case '/theme':
         if (parts[1]) {
@@ -753,10 +769,10 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   let activeDialog = null;
 
   function showHelp() {
-    if (activeDialog) {
-      activeDialog.destroy();
-      activeDialog = null;
-    }
+    if (activeDialog) return; // already open
+
+    // Remember which panel was active so closing help restores it
+    const prevPanel = focusedPanel;
 
     const helpText = [
       `{center}{bold}╔═══════════════════════════════╗{/bold}{/center}`,
@@ -822,11 +838,30 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     });
 
     activeDialog.key(['escape', 'enter', 'q'], () => {
-      activeDialog.destroy();
+      if (!activeDialog) return;
+      const dlg = activeDialog;
       activeDialog = null;
-      focusedPanel = 'rooms';
+
+      // Swallow any immediately-following buffered Enter so the closing
+      // key can't select an item in the list we're about to focus.
+      suppressSelectUntil = Date.now() + 250;
+
+      // Move focus OFF the dialog BEFORE destroying it — blessed crashes
+      // (null.ileft in _getLeft) when the focused element is detached
+      // mid-dispatch. Restore the panel active before help was opened.
+      if (prevPanel === 'dms') {
+        focusedPanel = 'dms';
+        dmList.focus();
+      } else if (prevPanel === 'users' || prevPanel === 'search') {
+        focusedPanel = 'users';
+        usersList.focus();
+      } else {
+        focusedPanel = 'rooms';
+        roomsList.focus();
+      }
       updateFocusIndicators();
-      roomsList.focus();
+
+      dlg.destroy();
       screen.render();
     });
 
@@ -917,6 +952,11 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       socket.off('user-logged-out', onUserLoggedOut);
       socket.off('room_message_notification', onRoomNotification);
       socket.off('private_message', onPrivateMessageLobby);
+      // Never leak the help overlay onto the next view
+      if (activeDialog) {
+        activeDialog.destroy();
+        activeDialog = null;
+      }
       container.destroy();
     },
     show() {

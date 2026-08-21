@@ -70,3 +70,47 @@ export function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Contrast helpers — some themes define dimFg/muted with the SAME value as
+//  headerBg/statusBarBg (solarized, dracula), making text on those surfaces
+//  invisible. Pick the candidate with the largest luminance distance from bg.
+// ─────────────────────────────────────────────────────────────────────────────
+function luminance(hex) {
+  if (typeof hex !== 'string' || hex[0] !== '#') return null;
+  const h = hex.slice(1);
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  const n = parseInt(full, 16);
+  return 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+}
+
+/** Choose the most readable color from `candidates` to place on `bgHex`. */
+export function pickReadable(bgHex, candidates) {
+  const bgL = luminance(bgHex);
+  if (bgL == null) return candidates.find(c => c) || '';
+  let best = candidates.find(c => c) || '';
+  let bestDist = -1;
+  for (const c of candidates) {
+    const l = luminance(c);
+    if (l == null) continue;
+    const dist = Math.abs(l - bgL);
+    if (dist > bestDist) { bestDist = dist; best = c; }
+  }
+  return best;
+}
+
+/**
+ * Prefer a dim foreground, but never an invisible one: return the first
+ * candidate whose luminance distance from bgHex exceeds minContrast,
+ * falling back to the highest-contrast candidate.
+ */
+export function readableDim(bgHex, candidates, minContrast = 40) {
+  const bgL = luminance(bgHex);
+  if (bgL == null) return pickReadable(bgHex, candidates);
+  for (const c of candidates) {
+    const l = luminance(c);
+    if (l != null && Math.abs(l - bgL) >= minContrast) return c;
+  }
+  return pickReadable(bgHex, candidates);
+}

@@ -223,9 +223,10 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     left: 0,
     width: '100%',
     height: 1,
-    content: ' {gray-fg}Enter send  ·  Esc back  ·  PgUp/Dn scroll  ·  Home top  ·  End bottom  ·  /clear  /back{/gray-fg}',
+    content: '{bold}Enter{/bold} send  ·  {bold}Esc{/bold} back  ·  {bold}PgUp/Dn{/bold} scroll  ·  {bold}Home{/bold} top  ·  {bold}End{/bold} bottom  ·  {bold}/clear{/bold}  {bold}/back{/bold}',
     tags: true,
-    style: { bg: theme.statusBarBg },
+    style: { fg: theme.fg, bg: theme.statusBarBg },
+    align: 'center',
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -485,8 +486,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
       switch (cmd) {
         case '/back':
         case '/quit':
-          cleanup();
-          onBack();
+          exitToLobby();
           return;
         case '/clear':
           messages = [];
@@ -571,8 +571,22 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
   // dispatches key events to the focused element, and the input is
   // always focused here, so bindings on container/messagesBox
   // would never fire.
-  backBtn.on('click', () => { cleanup(); onBack(); });
-  messageInput.key(['escape'], () => { cleanup(); onBack(); });
+  //
+  // exitToLobby(): messageInput is the FOCUSED element; destroying its
+  // tree synchronously inside a key handler detaches it mid-dispatch and
+  // crashes blessed later (null.ileft in _getLeft when focus is pushed).
+  // So: cleanup immediately, defer the actual view swap to setImmediate,
+  // and guard against double-fire from buffered keys.
+  let exiting = false;
+  function exitToLobby() {
+    if (exiting) return;
+    exiting = true;
+    cleanup();
+    setImmediate(onBack);
+  }
+
+  backBtn.on('click', () => { exitToLobby(); });
+  messageInput.key(['escape'], () => { exitToLobby(); });
 
   // blessed 0.1.81 has no scrollUp/scrollDown — use scroll(offset):
   // negative scrolls up, positive scrolls down.
