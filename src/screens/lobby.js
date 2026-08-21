@@ -164,7 +164,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     left: 0,
     width: '100%-2',
     height: 1,
-    content: panelTitle('💬', 'Direct Messages'),
+    content: panelTitle('💬', 'New Received'),
     tags: true,
     style: { fg: theme.primary, bg: theme.bg, bold: true },
   });
@@ -412,7 +412,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       return justRead.has(id) ? 0 : (chat.unreadCount || 0);
     };
 
-    const header = panelTitle('💬', 'Direct Messages', dmTotalUnread() || null);
+    const header = panelTitle('💬', 'New Received', dmTotalUnread() || null);
     dmHeader.setContent(header);
 
     // Only show conversations that have unread messages — read ones
