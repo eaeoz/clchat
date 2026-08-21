@@ -281,7 +281,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     left: 0,
     width: '100%',
     height: 1,
-    content: '{center}Tab panels  ·  Enter select  ·  ` search  ·  Esc command  ·  F1 help  ·  F5 refresh{/center}',    tags: true,
+    content: '{center}Tab panels  ·  Enter select  ·  ` search  ·  Esc command  ·  F1 help  ·  F5 refresh{/center}', tags: true,
     style: { fg: theme.dimFg || theme.muted, bg: theme.statusBarBg },
   });
 
@@ -408,7 +408,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       privateChats = dmsData.privateChats || dmsData.chats || [];
       renderDMs();
       updateStatusBar();
-    } catch {}
+    } catch { }
   }
 
   function renderDMs() {
@@ -760,7 +760,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
     const helpText = [
       `{center}{bold}╔═══════════════════════════════╗{/bold}{/center}`,
-      `{center}{bold}║         SOCIAL CLI HELP        ║{/bold}{/center}`,
+      `{center}{bold}║         SOCIAL CLI HELP       ║{/bold}{/center}`,
       `{center}{bold}╚═══════════════════════════════╝{/bold}{/center}`,
       ``,
       `{bold}{yellow-fg}Commands{/yellow-fg}{/bold}`,
