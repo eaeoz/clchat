@@ -187,12 +187,14 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     top: 0,
     left: 1,
     right: 1,
-    height: '100%',
+    // NOTE: never use height:'100%' inside a bordered parent — blessed
+    // resolves it against the FULL parent height and the child erases
+    // the bottom border row. Anchor with top+bottom instead.
+    bottom: 0,
     style: {
       fg: theme.fg,
       bg: theme.inputBg,
     },
-    inputOnFocus: true,
     placeholder: `  Message ${targetName}…`,
   });
 

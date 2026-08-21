@@ -21,7 +21,9 @@ const TAGLINE = '  Connect · Chat · Communicate  ';
 export default function createLoginScreen(screen, onLogin) {
   const theme = getCurrentTheme();
   const { width: termW, height: termH } = getTerminalSize();
-  const showLogo = termH >= 30 && termW >= 70;
+  // Logo needs a tall terminal — on medium ones those rows are needed
+  // by the form card itself (content-driven sizing below).
+  const showLogo = termH >= 36 && termW >= 70;
 
   // ── Root container ──────────────────────────────────────────
   const container = blessed.box({
@@ -86,12 +88,18 @@ export default function createLoginScreen(screen, onLogin) {
   const logoBottom = showLogo ? LOGO.length + 3 : 4;
 
   // ── Main form card ──────────────────────────────────────────
+  // Height is driven by CONTENT (fields per mode), not by terminal %,
+  // otherwise the card ends up shorter than its content and fields
+  // overflow / borders get painted over. Falls back to a scrollable
+  // fields area on very short terminals.
+  const FIELDS_H = { login: 4, register: 12 };  // rows the fields need
+  const CARD_RESERVED = 3 + 7 + 2;               // tab/divider area + button/msg + border
   const cardW = Math.min(68, Math.max(50, Math.floor(termW * 0.72)));
   const formBox = blessed.box({
     parent: container,
     top: logoBottom,
     width: cardW,
-    height: `100%-${logoBottom + 3}`,
+    height: Math.min(FIELDS_H.login + CARD_RESERVED, termH - logoBottom - 2),
     left: 'center',
     border: { type: 'line' },
     style: {
@@ -107,7 +115,7 @@ export default function createLoginScreen(screen, onLogin) {
     top: 0,
     left: 0,
     width: '100%',
-    height: 3,
+    height: 2,
     style: { bg: theme.sidebarBg || theme.inputBg },
   });
 
@@ -138,188 +146,96 @@ export default function createLoginScreen(screen, onLogin) {
   // Divider
   blessed.line({
     parent: formBox,
-    top: 3,
+    top: 2,
     left: 0,
     orientation: 'horizontal',
     style: { fg: theme.border },
   });
 
   // ── Fields area ─────────────────────────────────────────────
+  // Compact two-column grid so ALL fields fit without scrolling
+  // (a scrolled container hides focused fields mid-tab). The
+  // scrollable container remains as a safety net for very short
+  // terminals — overflow is clipped instead of corrupting borders.
   const fieldsContainer = blessed.box({
     parent: formBox,
-    top: 5,
+    top: 3,
     left: 3,
     right: 3,
     bottom: 7,
+    scrollable: true,
+    mouse: true,
   });
 
-  // ─── Login: Username ────────────────────────────────────────
-  blessed.text({
-    parent: fieldsContainer,
-    top: 0,
-    left: 0,
-    height: 1,
-    content: '{bold}Username{/bold}',
-    tags: true,
-    style: { fg: theme.muted },
-  });
+  const COL_L = { left: 0, width: '50%-2' };
+  const COL_R = { left: '50%+2', width: '50%-2' };
 
-  const usernameInput = blessed.textbox({
-    parent: fieldsContainer,
-    top: 1,
-    left: 0,
-    width: '100%',
-    height: 3,
-    border: { type: 'line' },
-    style: {
-      fg: theme.fg,
-      bg: theme.inputBg,
-      border: { fg: theme.border },
-      focus: { border: { fg: theme.primary } },
-    },
-    secret: false,
-  });
+  function fieldLabel(text, top, col) {
+    return blessed.text({
+      parent: fieldsContainer,
+      top,
+      ...col,
+      height: 1,
+      content: `{bold}${text}{/bold}`,
+      tags: true,
+      style: { fg: theme.muted },
+    });
+  }
 
-  // ─── Login: Password ────────────────────────────────────────
-  blessed.text({
-    parent: fieldsContainer,
-    top: 5,
-    left: 0,
-    height: 1,
-    content: '{bold}Password{/bold}',
-    tags: true,
-    style: { fg: theme.muted },
-  });
+  function fieldInput(top, col, extra = {}) {
+    return blessed.textbox({
+      parent: fieldsContainer,
+      top,
+      ...col,
+      height: 3,
+      border: { type: 'line' },
+      style: {
+        fg: theme.fg,
+        bg: theme.inputBg,
+        border: { fg: theme.border },
+        focus: { border: { fg: theme.primary } },
+      },
+      ...extra,
+    });
+  }
 
-  const passwordInput = blessed.textbox({
-    parent: fieldsContainer,
-    top: 6,
-    left: 0,
-    width: '100%',
-    height: 3,
-    border: { type: 'line' },
-    style: {
-      fg: theme.fg,
-      bg: theme.inputBg,
-      border: { fg: theme.border },
-      focus: { border: { fg: theme.primary } },
-    },
-    secret: true,
-  });
+  // Row 0 (both modes): Username | Password(login) / Email(register)
+  const usernameLabel = fieldLabel('Username', 0, COL_L);
+  const usernameInput = fieldInput(1, COL_L);
 
-  // ─── Register extra fields ──────────────────────────────────
-  // Row A: Email
-  const r_emailLabel = blessed.text({
-    parent: fieldsContainer,
-    top: 10,
-    left: 0,
-    height: 1,
-    content: '{bold}Email{/bold}',
-    tags: true,
-    style: { fg: theme.muted },
-    hidden: true,
-  });
+  const passwordLabel = fieldLabel('Password', 0, COL_R);
+  const passwordInput = fieldInput(1, COL_R, { secret: true });
 
-  const r_emailInput = blessed.textbox({
-    parent: fieldsContainer,
-    top: 11,
-    left: 0,
-    width: '100%',
-    height: 3,
-    border: { type: 'line' },
-    style: {
-      fg: theme.fg,
-      bg: theme.inputBg,
-      border: { fg: theme.border },
-      focus: { border: { fg: theme.primary } },
-    },
-    hidden: true,
-  });
+  // Register-only fields (hidden in login mode)
+  const r_emailLabel = fieldLabel('Email', 0, COL_R);
+  const r_emailInput = fieldInput(1, COL_R);
 
-  // Row B: Full Name + Age (side by side)
-  const r_fullNameLabel = blessed.text({
-    parent: fieldsContainer,
-    top: 15,
-    left: 0,
-    width: '60%-1',
-    height: 1,
-    content: '{bold}Full Name{/bold} {gray-fg}(optional){/gray-fg}',
-    tags: true,
-    style: { fg: theme.muted },
-    hidden: true,
-  });
+  const r_ageLabel = fieldLabel('Age (18-100)', 4, COL_R);
+  const r_ageInput = fieldInput(5, COL_R);
 
-  const r_fullNameInput = blessed.textbox({
-    parent: fieldsContainer,
-    top: 16,
-    left: 0,
-    width: '60%-1',
-    height: 3,
-    border: { type: 'line' },
-    style: {
-      fg: theme.fg,
-      bg: theme.inputBg,
-      border: { fg: theme.border },
-      focus: { border: { fg: theme.primary } },
-    },
-    hidden: true,
-  });
+  const r_fullNameLabel = fieldLabel('Full Name', 8, COL_L);
+  const r_fullNameInput = fieldInput(9, COL_L);
 
-  const r_ageLabel = blessed.text({
-    parent: fieldsContainer,
-    top: 15,
-    left: '60%+1',
-    width: '40%-2',
-    height: 1,
-    content: '{bold}Age{/bold} {gray-fg}(18-100){/gray-fg}',
-    tags: true,
-    style: { fg: theme.muted },
-    hidden: true,
-  });
+  const r_genderLabel = fieldLabel('Gender (male / female)', 8, COL_R);
+  const r_genderInput = fieldInput(9, COL_R);
 
-  const r_ageInput = blessed.textbox({
-    parent: fieldsContainer,
-    top: 16,
-    left: '60%+1',
-    width: '40%-2',
-    height: 3,
-    border: { type: 'line' },
-    style: {
-      fg: theme.fg,
-      bg: theme.inputBg,
-      border: { fg: theme.border },
-      focus: { border: { fg: theme.primary } },
-    },
-    hidden: true,
-  });
-
-  // Row C: Gender
-  const r_genderLabel = blessed.text({
-    parent: fieldsContainer,
-    top: 20,
-    left: 0,
-    height: 1,
-    content: '{bold}Gender{/bold} {gray-fg}(male / female){/gray-fg}',
-    tags: true,
-    style: { fg: theme.muted },
-    hidden: true,
-  });
-
-  const r_genderInput = blessed.textbox({
-    parent: fieldsContainer,
-    top: 21,
-    left: 0,
-    width: '100%',
-    height: 3,
-    border: { type: 'line' },
-    style: {
-      fg: theme.fg,
-      bg: theme.inputBg,
-      border: { fg: theme.border },
-      focus: { border: { fg: theme.primary } },
-    },
-    hidden: true,
-  });
+  // Register grid:
+  //   row 0-3 : Username | Email
+  //   row 4-7 : Password | Age
+  //   row 8-11: Full Name | Gender
+  function layoutFields() {
+    if (isLoginMode) {
+      passwordLabel.top = 0;
+      passwordInput.top = 1;
+      passwordLabel.left = passwordInput.left = '50%+2';
+      passwordLabel.width = passwordInput.width = '50%-2';
+    } else {
+      passwordLabel.top = 4;
+      passwordInput.top = 5;
+      passwordLabel.left = passwordInput.left = 0;
+      passwordLabel.width = passwordInput.width = '50%-2';
+    }
+  }
 
   // ── Message box ──────────────────────────────────────────────
   const messageBox = blessed.text({
@@ -379,8 +295,8 @@ export default function createLoginScreen(screen, onLogin) {
   let isLoginMode = true;
   const regElements = [
     r_emailLabel, r_emailInput,
-    r_fullNameLabel, r_fullNameInput,
     r_ageLabel, r_ageInput,
+    r_fullNameLabel, r_fullNameInput,
     r_genderLabel, r_genderInput,
   ];
   const allInputs = [usernameInput, passwordInput, r_emailInput, r_fullNameInput, r_ageInput, r_genderInput];
@@ -412,6 +328,12 @@ export default function createLoginScreen(screen, onLogin) {
     isLoginMode = loginMode;
     clearAllFields();
     regElements.forEach(f => { f.hidden = loginMode; });
+    layoutFields();
+    // Resize card to fit this mode's fields (clamped to terminal)
+    formBox.height = Math.min(
+      FIELDS_H[loginMode ? 'login' : 'register'] + CARD_RESERVED,
+      termH - logoBottom - 2
+    );
     updateTabUI();
     messageBox.setContent('');
     screen.render();
@@ -512,7 +434,7 @@ export default function createLoginScreen(screen, onLogin) {
 
   // ── Focus management ─────────────────────────────────────────
   const loginFields = [usernameInput, passwordInput];
-  const registerFields = [usernameInput, passwordInput, r_emailInput, r_fullNameInput, r_ageInput, r_genderInput];
+  const registerFields = [usernameInput, r_emailInput, passwordInput, r_ageInput, r_fullNameInput, r_genderInput];
   let fieldIndex = 0;
   let exiting = false;
 
@@ -555,13 +477,15 @@ export default function createLoginScreen(screen, onLogin) {
     process.exit(0);
   }
 
-  // Enter-key progression
-  usernameInput.key(['enter'], () => focusField(1));
-  passwordInput.key(['enter'], () => handleSubmit());
-  r_emailInput.key(['enter'], () => focusField(3));
-  r_fullNameInput.key(['enter'], () => focusField(4));
-  r_ageInput.key(['enter'], () => focusField(5));
-  r_genderInput.key(['enter'], () => handleSubmit());
+  // Enter-key progression: next field, submit on the last one
+  [usernameInput, passwordInput, r_emailInput, r_ageInput, r_fullNameInput, r_genderInput].forEach(inp => {
+    inp.key(['enter'], () => {
+      const fields = getCurrentFields();
+      const idx = fields.indexOf(inp);
+      if (idx >= 0 && idx < fields.length - 1) focusField(idx + 1);
+      else handleSubmit();
+    });
+  });
 
   // Program-level hotkeys
   const programKeypressHandler = (ch, key) => {
