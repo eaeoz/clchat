@@ -4,7 +4,7 @@ import socket from '../socket/client.js';
 import { justRead, closeState } from './chat.js';
 import { getCurrentTheme, getThemeNames, setTheme } from '../themes/index.js';
 import { loadConfig, saveConfig } from '../utils/storage.js';
-import { truncate } from '../utils/terminal.js';
+import { truncate, purgeFromScreenRegistries } from '../utils/terminal.js';
 import { APP_VERSION } from '../version.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,6 +301,18 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   let genderCache = new Map(); // userId -> 'male' | 'female' | ''
   let userSearchTimeout = null;
   let focusedPanel = 'rooms';  // 'rooms' | 'dms' | 'users' | 'search'
+  // Once true, every async continuation (fetches, debounce timers, hydrate
+  // workers) must stop touching widgets — the tree is dead and blessed has
+  // no protection against rendering into destroyed subtrees (which can
+  // corrupt parent chains and crash _getWidth with a stack overflow).
+  let destroyed = false;
+
+  function guard(fn) {
+    return (...args) => {
+      if (destroyed) return;
+      fn(...args);
+    };
+  }
 
   // ══════════════════════════════════════════════════════════════
   //  FOCUS INDICATOR — highlighted panel header (Tab to switch)
@@ -313,6 +325,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   }
 
   function updateFocusIndicators() {
+    if (destroyed) return;
     stylePanelHeader(roomsHeader, focusedPanel === 'rooms');
     stylePanelHeader(dmHeader, focusedPanel === 'dms');
     stylePanelHeader(usersHeader, focusedPanel === 'users' || focusedPanel === 'search');
@@ -333,6 +346,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   }
 
   function updateStatusBar() {
+    if (destroyed) return;
     const totalUnread = rooms.reduce((s, r) => s + (r.unreadCount || 0), 0)
       + dmTotalUnread();
     statusText.setContent(
@@ -346,6 +360,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   }
 
   async function loadData() {
+    if (destroyed) return;
     try {
       statusText.setContent(` {yellow-fg}●{/yellow-fg} Loading…`);
       screen.render();
@@ -357,12 +372,14 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
         await closeState.last;
         closeState.last = null;
       }
+      if (destroyed) return;
 
       const [roomsData, usersData, dmsData] = await Promise.all([
         api.getPublicRooms(),
         api.getUsers(),
         api.getPrivateChats ? api.getPrivateChats() : Promise.resolve({ chats: [] }),
       ]);
+      if (destroyed) return;
 
       rooms = roomsData.rooms || [];
       allUsers = usersData.users || [];
@@ -378,6 +395,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       updateStatusBar();
       screen.render();
     } catch (error) {
+      if (destroyed) return;
       statusText.setContent(` {red-fg}●{/red-fg} Error loading data`);
       screen.render();
     }
@@ -385,6 +403,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   // ── Rooms list ────────────────────────────────────────────────
   function renderRooms() {
+    if (destroyed) return;
     const items = rooms.map(r => {
       const unread = unreadBadge(r.unreadCount);
       const name = truncate(r.name || 'Unnamed', 22);
@@ -403,12 +422,14 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   // The server auto-adds brand-new senders to the chat list, so a
   // refetch is enough for a first message to show up.
   async function refreshDMs() {
+    if (destroyed) return;
     try {
       if (closeState.last) {
         await closeState.last;
         closeState.last = null;
       }
       const dmsData = api.getPrivateChats ? await api.getPrivateChats() : {};
+      if (destroyed) return;
       privateChats = dmsData.privateChats || dmsData.chats || [];
       renderDMs();
       updateStatusBar();
@@ -416,6 +437,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   }
 
   function renderDMs() {
+    if (destroyed) return;
     // Chats that were just read disappear IMMEDIATELY: their unread count
     // is treated as 0 for both the row list and the header total — no
     // waiting for the server's read receipt to catch up. Each entry is
@@ -462,6 +484,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   }
 
   function renderUsers() {
+    if (destroyed) return;
     const onlineCount = allUsers.filter(u => u.status === 'online').length;
     usersHeader.setContent(panelTitle('👥', 'Users', onlineCount));
 
@@ -501,10 +524,11 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     let index = 0;
     let updated = false;
     async function worker() {
-      while (index < unknown.length) {
+      while (index < unknown.length && !destroyed) {
         const u = unknown[index++];
         try {
           const res = await api.getUserProfile(u.userId);
+          if (destroyed) return;
           const prof = (res && res.user) || res || {};
           genderCache.set(u.userId, (prof.gender || '').toLowerCase());
           updated = true;
@@ -516,7 +540,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     await Promise.all(
       Array.from({ length: Math.min(5, unknown.length) }, worker)
     );
-    if (updated) renderUsers();
+    if (updated && !destroyed) renderUsers();
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -548,6 +572,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   //  SEARCH
   // ══════════════════════════════════════════════════════════════
   function filterUsers(query) {
+    if (destroyed) return;
     const q = query.trim().toLowerCase();
     if (q.length > 0) {
       onlineUsers = allUsers.filter(u => {
@@ -572,7 +597,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     if (key && (key.name === 'escape' || key.name === 'tab' || key.name === 'return' || key.ctrl)) return;
     if (ch) {
       clearTimeout(userSearchTimeout);
-      userSearchTimeout = setTimeout(() => filterUsers(searchInput.getValue()), 80);
+      userSearchTimeout = setTimeout(guard(() => filterUsers(searchInput.getValue())), 80);
     }
   });
 
@@ -701,6 +726,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   });
 
   function setStatus(msg) {
+    if (destroyed) return;
     statusText.setContent(` ${msg}`);
     screen.render();
   }
@@ -941,6 +967,9 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   return {
     destroy() {
+      // Stop every async continuation BEFORE tearing down widgets.
+      destroyed = true;
+      clearTimeout(userSearchTimeout);
       clearTimeout(bootRefetch);
       clearInterval(dmsPollInterval);
       screen.unkey(['f1'], onF1);
@@ -958,6 +987,12 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
         activeDialog = null;
       }
       container.destroy();
+      // blessed only unregisters the subtree ROOT from screen.clickable /
+      // screen.keyable when it is destroyed directly; descendants keep
+      // stale registrations (their .parent still points into the dead
+      // tree). Mouse/focus walks over those can measure broken width
+      // chains — purge them defensively.
+      purgeFromScreenRegistries(screen, container);
     },
     show() {
       container.show();

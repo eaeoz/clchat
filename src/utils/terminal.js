@@ -114,3 +114,29 @@ export function readableDim(bgHex, candidates, minContrast = 40) {
   }
   return pickReadable(bgHex, candidates);
 }
+
+/**
+ * blessed's Node.destroy() only unregisters the destroyed element itself
+ * from screen.clickable / screen.keyable — descendants stay registered
+ * with stale parent chains. Call AFTER container.destroy() to remove the
+ * whole dead subtree from those global registries.
+ */
+export function purgeFromScreenRegistries(screen, container) {
+  if (!screen || !container || !container.forDescendants) return;
+  try {
+    container.forDescendants(el => {
+      let i = screen.clickable.indexOf(el);
+      if (~i) screen.clickable.splice(i, 1);
+      i = screen.keyable.indexOf(el);
+      if (~i) screen.keyable.splice(i, 1);
+    });
+    let i = screen.clickable.indexOf(container);
+    if (~i) screen.clickable.splice(i, 1);
+    i = screen.keyable.indexOf(container);
+    if (~i) screen.keyable.splice(i, 1);
+    // Hover target may point into the dead subtree
+    if (screen.hover && screen.hover.detached) screen.hover = null;
+  } catch {
+    // registries are internal blessed state; never fail a destroy() over them
+  }
+}

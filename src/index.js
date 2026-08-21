@@ -3,6 +3,10 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import os from 'os';
+import { join as pathJoin } from 'path';
+import { mkdirSync, appendFileSync } from 'fs';
+
 import blessed from 'blessed';
 import api from './api/client.js';
 import socket from './socket/client.js';
@@ -113,12 +117,34 @@ socket.on('force_logout', (data) => {
 });
 
 // Global error handler
+// Never console.error inside the TUI — it paints raw text over panels and
+// leaves blessed in an inconsistent state. Log to disk instead and try to
+// keep the interface usable.
+function logCrash(kind, error) {
+  try {
+    const dir = pathJoin(os.homedir(), '.social-cli');
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(
+      path.join(dir, 'error.log'),
+      `[${new Date().toISOString()}] ${kind}: ${error && error.stack ? error.stack : String(error)}\n`
+    );
+  } catch { /* logging must never throw */ }
+}
+
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+  logCrash('uncaughtException', error);
+  try {
+    screen.render();
+  } catch {
+    // The crash may have corrupted the widget tree itself; if we cannot
+    // recover the display, exit cleanly rather than limp along.
+    try { screen.destroy(); } catch {}
+    process.exit(1);
+  }
 });
 
 process.on('unhandledRejection', (error) => {
-  console.error('Unhandled rejection:', error);
+  logCrash('unhandledRejection', error);
 });
 
 // Cleanup on exit

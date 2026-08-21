@@ -2,7 +2,7 @@ import blessed from 'blessed';
 import api from '../api/client.js';
 import socket from '../socket/client.js';
 import { getCurrentTheme } from '../themes/index.js';
-import { truncate, formatTimestamp, formatDate } from '../utils/terminal.js';
+import { truncate, formatTimestamp, formatDate, purgeFromScreenRegistries } from '../utils/terminal.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Hex → blessed named-color (fallback map)
@@ -237,6 +237,9 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
   let isTyping = false;
   let typingUsers = new Map();
   let nicknameMap = new Map();
+  // Async continuations must not touch widgets after teardown
+  // (see lobby.js destroyed-guard note).
+  let destroyed = false;
 
   // ══════════════════════════════════════════════════════════════
   //  RENDERING
@@ -278,6 +281,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
   }
 
   function renderMessages() {
+    if (destroyed) return;
     if (messages.length === 0) {
       messagesBox.setContent('  {gray-fg}No messages yet. Say hello!{/gray-fg}');
       screen.render();
@@ -394,6 +398,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     if (nicknameMap.has(userId)) return;
     try {
       const data = await api.getUserProfile(userId);
+      if (destroyed) return;
       const profile = data.user || data;
       const nick = profile.nickName || profile.displayName;
       if (nick) nicknameMap.set(userId, nick);
@@ -418,6 +423,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
   }
 
   function updateTypingIndicator() {
+    if (destroyed) return;
     if (typingUsers.size === 0) {
       typingBox.setContent('');
     } else {
@@ -431,6 +437,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
   }
 
   function onUserStatusChanged(data) {
+    if (destroyed) return;
     if (isPrivate && data.userId === targetId) {
       headerInfo.setContent(
         data.status === 'online'
@@ -665,8 +672,13 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
 
   return {
     destroy() {
+      // Stop async continuations before tearing down widgets (same
+      // rationale as lobby: blessed has no defense against renders into
+      // destroyed subtrees).
+      destroyed = true;
       cleanup();
       container.destroy();
+      purgeFromScreenRegistries(screen, container);
     },
     show() {
       container.show();
