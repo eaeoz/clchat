@@ -511,13 +511,15 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   });
 
   // Backtick → search focus (unless already typing in an input)
-  screen.key(['`'], () => {
+  const onBacktick = () => {
+    if (!searchInput.parent) return; // lobby already destroyed
     if (screen.focused === searchInput || screen.focused === commandInput) return;
     focusedPanel = 'search';
     updateFocusIndicators();
     searchInput.focus();
     screen.render();
-  });
+  };
+  screen.key(['`'], onBacktick);
 
   // ══════════════════════════════════════════════════════════════
   //  SOCKET EVENTS (named so they can be removed on destroy)
@@ -823,6 +825,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     destroy() {
       screen.unkey(['f1'], onF1);
       screen.unkey(['f5'], onF5);
+      screen.unkey(['`'], onBacktick);
       socket.off('user_status_changed', onUserStatusChanged);
       socket.off('user_joined', onUserJoined);
       socket.off('user_left', onUserLeft);
