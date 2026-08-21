@@ -191,6 +191,7 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     // resolves it against the FULL parent height and the child erases
     // the bottom border row. Anchor with top+bottom instead.
     bottom: 0,
+    inputOnFocus: true,
     style: {
       fg: theme.fg,
       bg: theme.inputBg,
