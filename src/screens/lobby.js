@@ -316,7 +316,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       rooms = roomsData.rooms || [];
       allUsers = usersData.users || [];
       onlineUsers = allUsers;
-      privateChats = dmsData.chats || [];
+      // Server returns { privateChats: [...] } (same as the web client)
+      privateChats = dmsData.privateChats || dmsData.chats || [];
 
       renderRooms();
       renderDMs();
@@ -353,6 +354,17 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   }
 
   // ── DMs panel — DM inbox ──────────────────────────────────────
+  // Refetch just the inbox (mirrors the web client's loadPrivateChats).
+  // The server auto-adds brand-new senders to the chat list, so a
+  // refetch is enough for a first message to show up.
+  async function refreshDMs() {
+    try {
+      const dmsData = api.getPrivateChats ? await api.getPrivateChats() : {};
+      privateChats = dmsData.privateChats || dmsData.chats || [];
+      renderDMs();
+    } catch {}
+  }
+
   function renderDMs() {
     const header = panelTitle('💬', 'Direct Messages', privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0) || null);
     dmHeader.setContent(header);
@@ -545,14 +557,17 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   };
 
   const onPrivateMessageLobby = (data) => {
-    // Bump unread for matching DM
+    if (data.senderId === user.userId) return;
+
+    // Instant feedback: bump unread for a known chat
     const chat = privateChats.find(c => c.otherUser && c.otherUser.userId === data.senderId);
     if (chat) {
       chat.unreadCount = (chat.unreadCount || 0) + 1;
       renderDMs();
-    } else {
-      loadData();
     }
+
+    // Then refetch the inbox so new senders / server counts are picked up
+    refreshDMs();
   };
 
   socket.on('user_status_changed', onUserStatusChanged);

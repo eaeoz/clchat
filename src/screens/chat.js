@@ -362,6 +362,10 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     if (!isPrivate) return;
     if (msg.senderId !== user.userId && msg.senderId !== targetId) return;
     messages.push(msg);
+    // Live read receipt for messages read while the chat is open
+    if (msg.senderId !== user.userId && msg.messageId) {
+      socket.markAsRead(msg.messageId);
+    }
     renderMessages();
   }
 
@@ -588,6 +592,10 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
   // ── Join + init ───────────────────────────────────────────────
   if (!isPrivate) {
     socket.joinRoom(targetId, user.userId, user.username);
+  } else {
+    // Opening the chat marks the whole conversation as read
+    // (server: messages.updateMany({ receiverId: me, senderId: other }, { $set: { isRead: true } }))
+    socket.markChatAsRead(user.userId, targetId);
   }
 
   loadMessages();
