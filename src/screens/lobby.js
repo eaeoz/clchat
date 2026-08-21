@@ -21,6 +21,21 @@ function unreadBadge(n) {
   return n > 99 ? ' {bold}(99+){/bold}' : ` {bold}(${n}){/bold}`;
 }
 
+/** Total unread across DMs, counted once per user — the server can list
+ *  the same conversation twice (duplicate chat docs), which would make a
+ *  plain sum double-count the total shown in the panel header. */
+function dmTotalUnread(list) {
+  const seen = new Set();
+  let total = 0;
+  for (const chat of list || []) {
+    const id = chat.otherUser && chat.otherUser.userId;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    total += chat.unreadCount || 0;
+  }
+  return total;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,7 +382,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   }
 
   function renderDMs() {
-    const header = panelTitle('💬', 'Direct Messages', privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0) || null);
+    const header = panelTitle('💬', 'Direct Messages', dmTotalUnread(privateChats) || null);
     dmHeader.setContent(header);
 
     // Only show conversations that have unread messages — read ones
