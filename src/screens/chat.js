@@ -402,12 +402,16 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
 
   function onUserTyping(data) {
     if (data.userId === user.userId) return;
+    // In a private chat only the partner's indicator matters — the server
+    // also broadcasts users typing elsewhere (rooms, other DMs).
+    if (isPrivate && data.userId !== targetId) return;
     typingUsers.set(data.userId, data.username);
     if (!nicknameMap.has(data.userId)) fetchNickname(data.userId);
     updateTypingIndicator();
   }
 
   function onUserStopTyping(data) {
+    if (isPrivate && data.userId !== targetId) return;
     typingUsers.delete(data.userId);
     updateTypingIndicator();
   }
