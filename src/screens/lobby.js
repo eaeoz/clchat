@@ -123,29 +123,17 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   const roomsHeader = blessed.text({
     parent: leftPanel,
     top: 0,
-    left: 1,
-    width: '100%-3',
+    left: 0,
+    width: '100%-2',
     height: 1,
     content: panelTitle('📡', 'Rooms'),
     tags: true,
-    style: { fg: theme.primary, bg: theme.panelHeaderBg || theme.headerBg, bold: true },
-  });
-
-  // Focus indicator (top border accent line)
-  const roomsFocusBorder = blessed.text({
-    parent: leftPanel,
-    top: 1,
-    left: 0,
-    width: '100%',
-    height: 1,
-    content: '',
-    tags: true,
-    style: { fg: theme.border, bg: theme.bg },
+    style: { fg: theme.primary, bg: theme.bg, bold: true },
   });
 
   const roomsList = blessed.list({
     parent: leftPanel,
-    top: 2,
+    top: 1,
     left: 0,
     width: '100%',
     bottom: 0,
@@ -172,28 +160,17 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   const dmHeader = blessed.text({
     parent: middlePanel,
     top: 0,
-    left: 1,
-    width: '100%-3',
+    left: 0,
+    width: '100%-2',
     height: 1,
     content: panelTitle('💬', 'Direct Messages'),
     tags: true,
-    style: { fg: theme.primary, bg: theme.panelHeaderBg || theme.headerBg, bold: true },
-  });
-
-  const dmFocusBorder = blessed.text({
-    parent: middlePanel,
-    top: 1,
-    left: 0,
-    width: '100%',
-    height: 1,
-    content: '',
-    tags: true,
-    style: { fg: theme.border, bg: theme.bg },
+    style: { fg: theme.primary, bg: theme.bg, bold: true },
   });
 
   const dmList = blessed.list({
     parent: middlePanel,
-    top: 2,
+    top: 1,
     left: 0,
     width: '100%',
     bottom: 0,
@@ -220,29 +197,18 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   const usersHeader = blessed.text({
     parent: rightPanel,
     top: 0,
-    left: 1,
-    width: '100%-3',
+    left: 0,
+    width: '100%-2',
     height: 1,
     content: panelTitle('👥', 'Users'),
     tags: true,
-    style: { fg: theme.primary, bg: theme.panelHeaderBg || theme.headerBg, bold: true },
-  });
-
-  const usersFocusBorder = blessed.text({
-    parent: rightPanel,
-    top: 1,
-    left: 0,
-    width: '100%',
-    height: 1,
-    content: '',
-    tags: true,
-    style: { fg: theme.border, bg: theme.bg },
+    style: { fg: theme.primary, bg: theme.bg, bold: true },
   });
 
   // Search
   const searchInput = blessed.textbox({
     parent: rightPanel,
-    top: 2,
+    top: 1,
     left: 0,
     width: '100%',
     height: 3,
@@ -259,7 +225,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   const usersList = blessed.list({
     parent: rightPanel,
-    top: 5,
+    top: 4,
     left: 0,
     width: '100%',
     bottom: 0,
@@ -317,13 +283,19 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   let focusedPanel = 'rooms';  // 'rooms' | 'dms' | 'users' | 'search'
 
   // ══════════════════════════════════════════════════════════════
-  //  FOCUS INDICATOR
+  //  FOCUS INDICATOR — highlighted panel header (Tab to switch)
   // ══════════════════════════════════════════════════════════════
+  function stylePanelHeader(el, isActive) {
+    el.style.fg = isActive ? (theme.panelHeaderActiveFg || theme.bg) : theme.primary;
+    el.style.bg = isActive
+      ? (theme.panelHeaderActive || theme.activeTab || theme.primary)
+      : theme.bg;
+  }
+
   function updateFocusIndicators() {
-    const active = theme.activeTab || theme.primary;
-    roomsFocusBorder.style.bg = focusedPanel === 'rooms' ? active : theme.border;
-    dmFocusBorder.style.bg = focusedPanel === 'dms' ? active : theme.border;
-    usersFocusBorder.style.bg = (focusedPanel === 'users' || focusedPanel === 'search') ? active : theme.border;
+    stylePanelHeader(roomsHeader, focusedPanel === 'rooms');
+    stylePanelHeader(dmHeader, focusedPanel === 'dms');
+    stylePanelHeader(usersHeader, focusedPanel === 'users' || focusedPanel === 'search');
     screen.render();
   }
 

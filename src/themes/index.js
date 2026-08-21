@@ -35,6 +35,8 @@ const themes = {
     dimFg: '#4b5563',
     activeTab: '#667eea',
     inactiveTab: '#374151',
+    panelHeaderActive: '#e94560',
+    panelHeaderActiveFg: '#ffffff',
   },
   matrix: {
     name: 'matrix',
@@ -71,6 +73,8 @@ const themes = {
     dimFg: '#004400',
     activeTab: '#00ff41',
     inactiveTab: '#003300',
+    panelHeaderActive: '#008f11',
+    panelHeaderActiveFg: '#00ff41',
   },
   retro: {
     name: 'retro',
@@ -107,6 +111,8 @@ const themes = {
     dimFg: '#553300',
     activeTab: '#ff6600',
     inactiveTab: '#442200',
+    panelHeaderActive: '#ff3300',
+    panelHeaderActiveFg: '#ffffff',
   },
   ocean: {
     name: 'ocean',
@@ -143,6 +149,8 @@ const themes = {
     dimFg: '#2c3e50',
     activeTab: '#48dbfb',
     inactiveTab: '#1e3a5f',
+    panelHeaderActive: '#0abde3',
+    panelHeaderActiveFg: '#0a1628',
   },
   solarized: {
     name: 'solarized',
@@ -179,6 +187,8 @@ const themes = {
     dimFg: '#073642',
     activeTab: '#268bd2',
     inactiveTab: '#073642',
+    panelHeaderActive: '#b58900',
+    panelHeaderActiveFg: '#002b36',
   },
   dracula: {
     name: 'dracula',
@@ -215,6 +225,8 @@ const themes = {
     dimFg: '#44475a',
     activeTab: '#bd93f9',
     inactiveTab: '#44475a',
+    panelHeaderActive: '#ff79c6',
+    panelHeaderActiveFg: '#282a36',
   },
 };
 
