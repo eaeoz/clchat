@@ -1,6 +1,7 @@
 import blessed from 'blessed';
 import api from '../api/client.js';
 import socket from '../socket/client.js';
+import { justRead, closeState } from './chat.js';
 import { getCurrentTheme, getThemeNames, setTheme } from '../themes/index.js';
 import { loadConfig, saveConfig } from '../utils/storage.js';
 import { truncate } from '../utils/terminal.js';
@@ -19,21 +20,6 @@ function panelTitle(icon, label, count = null) {
 function unreadBadge(n) {
   if (!n || n <= 0) return '';
   return n > 99 ? ' {bold}(99+){/bold}' : ` {bold}(${n}){/bold}`;
-}
-
-/** Total unread across DMs, counted once per user — the server can list
- *  the same conversation twice (duplicate chat docs), which would make a
- *  plain sum double-count the total shown in the panel header. */
-function dmTotalUnread(list) {
-  const seen = new Set();
-  let total = 0;
-  for (const chat of list || []) {
-    const id = chat.otherUser && chat.otherUser.userId;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    total += chat.unreadCount || 0;
-  }
-  return total;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -318,10 +304,41 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   // ══════════════════════════════════════════════════════════════
   //  DATA LOADING
   // ══════════════════════════════════════════════════════════════
+  // Single source of truth for the DM unread total. Applies the same
+  // just-read suppression as the row list, so the header badge and the
+  // status bar can never disagree with what is actually displayed.
+  function dmTotalUnread() {
+    return privateChats.reduce((s, c) => {
+      const id = c.otherUser && c.otherUser.userId;
+      return s + (justRead.has(id) ? 0 : (c.unreadCount || 0));
+    }, 0);
+  }
+
+  function updateStatusBar() {
+    const totalUnread = rooms.reduce((s, r) => s + (r.unreadCount || 0), 0)
+      + dmTotalUnread();
+    statusText.setContent(
+      ` {green-fg}●{/green-fg} Connected` +
+      (totalUnread > 0 ? `  {bold}{yellow-fg}[${totalUnread} unread]{/yellow-fg}{/bold}` : '')
+    );
+    // setContent() clears the element's pixels immediately; without a
+    // render here the bar stays blank whenever this runs after the last
+    // screen.render() of a refresh (e.g. from the inbox poll).
+    screen.render();
+  }
+
   async function loadData() {
     try {
       statusText.setContent(` {yellow-fg}●{/yellow-fg} Loading…`);
       screen.render();
+
+      // Web-client ordering: if a chat was just closed, wait for that
+      // request to finish BEFORE fetching the inbox, so the server has
+      // already applied state=false and the row is really gone.
+      if (closeState.last) {
+        await closeState.last;
+        closeState.last = null;
+      }
 
       const [roomsData, usersData, dmsData] = await Promise.all([
         api.getPublicRooms(),
@@ -340,13 +357,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       renderUsers();
       hydrateGenders();
 
-      const totalUnread = rooms.reduce((s, r) => s + (r.unreadCount || 0), 0)
-        + privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0);
-
-      statusText.setContent(
-        ` {green-fg}●{/green-fg} Connected` +
-        (totalUnread > 0 ? `  {bold}{yellow-fg}[${totalUnread} unread]{/yellow-fg}{/bold}` : '')
-      );
+      updateStatusBar();
       screen.render();
     } catch (error) {
       statusText.setContent(` {red-fg}●{/red-fg} Error loading data`);
@@ -375,19 +386,38 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   // refetch is enough for a first message to show up.
   async function refreshDMs() {
     try {
+      if (closeState.last) {
+        await closeState.last;
+        closeState.last = null;
+      }
       const dmsData = api.getPrivateChats ? await api.getPrivateChats() : {};
       privateChats = dmsData.privateChats || dmsData.chats || [];
       renderDMs();
+      updateStatusBar();
     } catch {}
   }
 
   function renderDMs() {
-    const header = panelTitle('💬', 'Direct Messages', dmTotalUnread(privateChats) || null);
+    // Chats that were just read disappear IMMEDIATELY: their unread count
+    // is treated as 0 for both the row list and the header total — no
+    // waiting for the server's read receipt to catch up. Each entry is
+    // released once a fetch confirms the conversation is fully read on
+    // the server, or instantly when a new message arrives from them.
+    for (const id of justRead) {
+      const c = privateChats.find(x => x.otherUser && x.otherUser.userId === id);
+      if (!c || (c.unreadCount || 0) === 0) justRead.delete(id);
+    }
+    const effUnread = (chat) => {
+      const id = chat.otherUser && chat.otherUser.userId;
+      return justRead.has(id) ? 0 : (chat.unreadCount || 0);
+    };
+
+    const header = panelTitle('💬', 'Direct Messages', dmTotalUnread() || null);
     dmHeader.setContent(header);
 
     // Only show conversations that have unread messages — read ones
     // disappear until a new message arrives
-    displayedChats = privateChats.filter(c => (c.unreadCount || 0) > 0);
+    displayedChats = privateChats.filter(c => effUnread(c) > 0);
 
     const items = displayedChats.map(chat => {
       const other = chat.otherUser || {};
@@ -575,17 +605,23 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     if (room) {
       room.unreadCount = (room.unreadCount || 0) + 1;
       renderRooms();
+      updateStatusBar();
     }
   };
 
   const onPrivateMessageLobby = (data) => {
     if (data.senderId === user.userId) return;
 
+    // A new message from a just-read user means real unread again —
+    // stop suppressing their row
+    justRead.delete(data.senderId);
+
     // Instant feedback: bump unread for a known chat
     const chat = privateChats.find(c => c.otherUser && c.otherUser.userId === data.senderId);
     if (chat) {
       chat.unreadCount = (chat.unreadCount || 0) + 1;
       renderDMs();
+      updateStatusBar();
     }
 
     // Then refetch the inbox so new senders / server counts are picked up
@@ -598,6 +634,14 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   socket.on('user-logged-out', onUserLoggedOut);
   socket.on('room_message_notification', onRoomNotification);
   socket.on('private_message', onPrivateMessageLobby);
+
+  // ── Inbox poll ────────────────────────────────────────────────
+  // The just-read suppression only covers chats opened HERE. Reads that
+  // happen elsewhere (web/phone) never trigger a socket event, so without
+  // a poll those rows would sit forever. 5s matches the web client.
+  const dmsPollInterval = setInterval(() => {
+    if (!container.detached) refreshDMs();
+  }, parseInt(process.env.DM_POLL_MS || '5000', 10));
 
   // ══════════════════════════════════════════════════════════════
   //  COMMAND HANDLING
@@ -830,6 +874,12 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   //  BOOT
   // ══════════════════════════════════════════════════════════════
   loadData();
+  // One follow-up fetch: if a chat was just read and closed, its
+  // mark_chat_as_read can land on the server a moment AFTER the first
+  // inbox fetch, leaving a ghost row. This second look clears it.
+  const bootRefetch = setTimeout(() => {
+    refreshDMs();
+  }, 2000);
 
   focusedPanel = 'rooms';
   updateFocusIndicators();
@@ -838,6 +888,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
 
   return {
     destroy() {
+      clearTimeout(bootRefetch);
+      clearInterval(dmsPollInterval);
       screen.unkey(['f1'], onF1);
       screen.unkey(['f5'], onF5);
       screen.unkey(['`'], onBacktick);

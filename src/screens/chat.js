@@ -34,6 +34,23 @@ function hexToBlessed(hex) {
 // ─────────────────────────────────────────────────────────────────────────────
 const MAX_MSG_LEN = 2000;
 
+// Private chats opened this session whose read receipt may not have
+// reached the server yet. The lobby hides these rows (and excludes them
+// from the total) IMMEDIATELY on return, and releases each entry once a
+// fetch confirms the conversation is fully read on the server.
+export const justRead = new Set();
+
+// The most recent close-private-chat request. The lobby awaits it before
+// its first inbox fetch — same ordering as the web client, which awaits
+// close-private-chat and only then reloads the list.
+export const closeState = { last: null };
+
+// Every DM opened this session. On return to the lobby we close them all
+// (state=false), like pressing the web client's X button on each one.
+// Safe: the server only hides a closed chat that also has 0 unread, so a
+// conversation with fresh unread messages stays visible.
+const openedPrivateChats = new Set();
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -588,10 +605,20 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     if (!isPrivate) {
       socket.leaveRoom(targetId, user.userId, user.username);
     } else {
-      // Leaving = the web client's X button: state=false in openChats.
-      // Everything was marked read during the visit, so the inbox row
-      // disappears — until a new message makes it visible again.
-      api.closePrivateChat(targetId).catch(() => {});
+      // Final read sweep before leaving: the open-time mark may still be
+      // in flight on a slow server, and messages that arrived in the last
+      // moment rely on per-message receipts. Re-marking is idempotent and
+      // makes sure the inbox row is really cleared when we go back.
+      socket.markChatAsRead(user.userId, targetId);
+      // Leaving = the web client's X button, applied to EVERY DM opened
+      // this session: state=false in openChats for all of them. The server
+      // keeps showing any that still have unread messages, so this can
+      // never hide something genuinely unread. The promise is kept so the
+      // lobby can await it before its first fetch (web client does exactly
+      // this: await close → reload list).
+      openedPrivateChats.add(targetId);
+      const closes = [...openedPrivateChats].map(id => api.closePrivateChat(id).catch(() => {}));
+      closeState.last = Promise.all(closes).then(() => {});
     }
 
     if (typingTimeout) clearTimeout(typingTimeout);
@@ -606,6 +633,10 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     socket.markChatAsRead(user.userId, targetId);
     // Mark it "open" in the inbox, same as the web client on select
     api.openPrivateChat(targetId).catch(() => {});
+    // Track it so turning back closes every DM opened this session
+    openedPrivateChats.add(targetId);
+    // Optimistic: let the lobby hide this row right away on return
+    justRead.add(targetId);
   }
 
   loadMessages();
