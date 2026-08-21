@@ -461,7 +461,11 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       const status = u.status === 'online'
         ? `{green-fg}●{/green-fg}`
         : `{gray-fg}○{/gray-fg}`;
-      const age = u.age ? ` {gray-fg}(${u.age}){/gray-fg}` : '';
+      // Theme-aware dim color for the age — hardcoded {gray-fg} maps to
+      // ANSI bright black, which some terminals render nearly identical
+      // to the background (age invisible). theme.muted is tuned per theme.
+      const ageColor = theme.muted || theme.dimFg || '#888888';
+      const age = u.age ? ` {${ageColor}-fg}(${u.age}){/}` : '';
       return ` ${status} ${gIcon} ${nameColored}${age}`.replace(/\s+$/, '');
     });
     usersList.setItems(
