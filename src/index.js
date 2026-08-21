@@ -69,7 +69,7 @@ function showLogin() {
   });
 }
 
-function showLobby() {
+function showLobby(focusPanel = 'rooms') {
   clearCurrentView();
   currentView = createLobbyScreen(
     screen,
@@ -77,7 +77,8 @@ function showLobby() {
     (room) => showChat(room, null),
     (privateChat) => showChat(null, privateChat),
     () => handleLogout(),
-    () => showLobby()
+    () => showLobby(),
+    focusPanel
   );
 }
 
@@ -88,7 +89,7 @@ function showChat(room, privateChat) {
     currentUser,
     room || {},
     privateChat,
-    () => showLobby()
+    () => showLobby(privateChat ? 'dms' : 'rooms')
   );
 }
 

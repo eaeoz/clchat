@@ -1,10 +1,13 @@
 import blessed from 'blessed';
+import { createRequire } from 'module';
 import api from '../api/client.js';
 import socket from '../socket/client.js';
 import { justRead, closeState } from './chat.js';
 import { getCurrentTheme, getThemeNames, setTheme } from '../themes/index.js';
 import { loadConfig, saveConfig } from '../utils/storage.js';
 import { truncate } from '../utils/terminal.js';
+
+const pkg = createRequire(import.meta.url)('../../package.json');
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -25,7 +28,7 @@ function unreadBadge(n) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, onLogout, onThemeChange) {
+export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, onLogout, onThemeChange, initialPanel = 'rooms') {
   const theme = getCurrentTheme();
   const config = loadConfig();
 
@@ -57,6 +60,17 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     content: `{bold}✦ Social CLI{/bold}`,
     tags: true,
     style: { fg: theme.accent, bg: theme.headerBg },
+  });
+
+  // Version label (terminals have no font sizes — dim color reads as "small")
+  blessed.text({
+    parent: header,
+    top: 1,
+    left: 16,
+    height: 1,
+    content: `v${pkg.version}`,
+    tags: true,
+    style: { fg: theme.dimFg || theme.muted, bg: theme.headerBg },
   });
 
   // User info
@@ -745,9 +759,9 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     }
 
     const helpText = [
-      `{bold}{center}╔═══════════════════════════════╗{/center}{/bold}`,
-      `{bold}{center}║         SOCIAL CLI HELP        ║{/center}{/bold}`,
-      `{bold}{center}╚═══════════════════════════════╝{/center}{/bold}`,
+      `{center}{bold}╔═══════════════════════════════╗{/bold}{/center}`,
+      `{center}{bold}║         SOCIAL CLI HELP        ║{/bold}{/center}`,
+      `{center}{bold}╚═══════════════════════════════╝{/bold}{/center}`,
       ``,
       `{bold}{yellow-fg}Commands{/yellow-fg}{/bold}`,
       `  {bold}/help{/bold}          Show this help`,
@@ -885,9 +899,9 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     refreshDMs();
   }, 2000);
 
-  focusedPanel = 'rooms';
+  focusedPanel = initialPanel === 'dms' ? 'dms' : 'rooms';
   updateFocusIndicators();
-  roomsList.focus();
+  (focusedPanel === 'dms' ? dmList : roomsList).focus();
   screen.render();
 
   return {
