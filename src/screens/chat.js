@@ -584,6 +584,11 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
 
     if (!isPrivate) {
       socket.leaveRoom(targetId, user.userId, user.username);
+    } else {
+      // Leaving = the web client's X button: state=false in openChats.
+      // Everything was marked read during the visit, so the inbox row
+      // disappears — until a new message makes it visible again.
+      api.closePrivateChat(targetId).catch(() => {});
     }
 
     if (typingTimeout) clearTimeout(typingTimeout);
@@ -596,6 +601,8 @@ export default function createChatScreen(screen, user, room, privateChat, onBack
     // Opening the chat marks the whole conversation as read
     // (server: messages.updateMany({ receiverId: me, senderId: other }, { $set: { isRead: true } }))
     socket.markChatAsRead(user.userId, targetId);
+    // Mark it "open" in the inbox, same as the web client on select
+    api.openPrivateChat(targetId).catch(() => {});
   }
 
   loadMessages();

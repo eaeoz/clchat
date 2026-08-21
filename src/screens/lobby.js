@@ -274,7 +274,8 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   //  STATE
   // ══════════════════════════════════════════════════════════════
   let rooms = [];
-  let privateChats = [];       // DM inbox
+  let privateChats = [];       // DM inbox (as returned by the server)
+  let displayedChats = [];     // subset actually rendered (only unread)
   let onlineUsers = [];        // users shown in the Users panel (filtered)
   let allUsers = [];
   let displayedUsers = [];     // sorted order actually rendered in usersList
@@ -369,7 +370,11 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
     const header = panelTitle('💬', 'Direct Messages', privateChats.reduce((s, c) => s + (c.unreadCount || 0), 0) || null);
     dmHeader.setContent(header);
 
-    const items = privateChats.map(chat => {
+    // Only show conversations that have unread messages — read ones
+    // disappear until a new message arrives
+    displayedChats = privateChats.filter(c => (c.unreadCount || 0) > 0);
+
+    const items = displayedChats.map(chat => {
       const other = chat.otherUser || {};
       const name = truncate(other.nickName || other.displayName || other.username || '?', 18);
       const status = other.status === 'online'
@@ -379,7 +384,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
       return ` ${status} ${name}${unread}`;
     });
     dmList.setItems(
-      items.length > 0 ? items : [' {gray-fg}No conversations yet{/gray-fg}']
+      items.length > 0 ? items : [' {gray-fg}No new messages{/gray-fg}']
     );
     screen.render();
   }
@@ -455,7 +460,7 @@ export default function createLobbyScreen(screen, user, onJoinRoom, onOpenChat, 
   });
 
   dmList.on('select', (item, index) => {
-    const chat = privateChats[index];
+    const chat = displayedChats[index];
     if (chat && chat.otherUser) onOpenChat(chat.otherUser);
   });
 
